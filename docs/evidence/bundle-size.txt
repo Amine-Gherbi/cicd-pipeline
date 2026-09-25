@@ -1,0 +1,5 @@
+
+> invoice-api@0.0.0 build
+> tsc -p tsconfig.build.json
+
+dist/ = 64 KiB (budget 512 KiB)

@@ -12,6 +12,9 @@ remote, no Actions, no PRs), and `docker info` fails with pipe access denied (no
 local image builds). Local PostgreSQL 16.13 (`select version()`) listens on
 port 5433 and was reachable for the migration test below.
 
+Fresh runs from 2026-10-23 are saved under `docs/evidence/`. `docs/PROOF.md`
+indexes every claim to its command; this file is the full observation log.
+
 ## Verified locally
 
 | Claim | Command | Observed |
@@ -35,7 +38,13 @@ port 5433 and was reachable for the migration test below.
 | the migrated database matches the schema | `npx prisma migrate diff --from-url … --to-schema-datamodel prisma/schema.prisma --exit-code` | `No difference detected.` exit 0 |
 | drift is reported as exit 2 and fails the gate | same diff after adding a stray table | exit 2; `Removed tables - drift_probe` |
 | the service still passes its own checks | `npm run verify` | `verify: ok`; 9/9 integration tests passed |
+| the smoke gate passes on the live local release | `bash scripts/smoke.sh` | `PASS 1/5` … `PASS 5/5`; `/ready` p95 7.7 ms; exit 0 |
+| the local release is live | `bash scripts/release-local.sh status` | `current: .releases/3b8fe59…`; `previous:` same; `pid: 2547 (alive)` |
 | the bundle budget has headroom | `npm run build && du -sk dist` | `64 dist` (64 KiB) against a 512 KiB budget |
+| the Dockerfile is multi-stage, non-root and has a healthcheck | `grep -nE '^(FROM\|USER\|HEALTHCHECK\|EXPOSE)' Dockerfile` | 2 `FROM` stages (build, runtime); `USER node`; `HEALTHCHECK`; `EXPOSE 8080`; `npm ci --omit=dev` in runtime. This is a structural check, not a build. |
+| `capture-assets` writes four WebP at the contract size | `node scripts/capture-assets.mjs` | `hero.webp`, `shot-01..03.webp`: all 2880x1800 WebP; manifest with 6 measurements, 3 invariants, 5 limits |
+| the hub accepts the snapshot | `ASSET_ROOT=… ASSET_PROJECTS_DIR=… node portfolio-site/scripts/check-assets.mjs` | `manifest valid, 4 shots present, 6 measurements and 3 invariants backed by files`; exit 0 |
+| the hero is labelled as a mock | `node -e "console.log(require('../_shared/assets/cicd-pipeline/manifest.json').shots[0].alt)"` | `alt` begins “Mock of the blocked pull-request check page, rendered from .github/workflows/pr.yml”; the image itself carries the same label |
 
 ### Destructive gate replay
 
@@ -120,11 +129,17 @@ artifact exists for this repository.
 | gitleaks blocks a committed secret | a second draft PR with a canary token; `gh pr checks <n>` | `unverified` |
 | image provenance verifies | `gh attestation verify oci://ghcr.io/{owner}/invoice-api@sha256:<digest> --repo {owner}/invoice-api` | `unverified` |
 | keyless signature verifies | `cosign verify ghcr.io/{owner}/invoice-api@sha256:<digest>` | `unverified` |
+| the image builds from this Dockerfile | `docker build -t invoice-api:local .` | `unverified` |
+| P2's published image signature verifies | `cosign verify ghcr.io/<owner>/ecommerce-platform@sha256:<digest> --certificate-identity-regexp '…/release.yml@refs/heads/main' --certificate-oidc-issuer https://token.actions.githubusercontent.com` | `unverified` |
+| P2's provenance attestation verifies | `gh attestation verify oci://ghcr.io/<owner>/ecommerce-platform@sha256:<digest> --repo <owner>/ecommerce-platform --signer-workflow <owner>/ecommerce-platform/.github/workflows/release.yml` | `unverified` |
+| the attested P2 commit is deployable locally | `./scripts/release-local.sh <sha>` in the `ecommerce-platform` repository | `unverified` |
 
-Notes on the last two rows: attestation and signing belong to the release lane
-(tag → image → attest → push), which is **not** part of this card and is not
-present in `.github/workflows/pr.yml`. They are listed so the absence is
-explicit, not to imply an artifact exists.
+Notes on the last five rows: attestation, signing, the image build and the
+promotion path belong to the release lane (tag → image → attest → push), which
+is **not present** in this repository (there is no `release.yml`) and is not
+part of `.github/workflows/pr.yml`. They are listed so the absence is explicit,
+not to imply an artifact exists. The exact promotion commands, and what each
+one does and does not prove, are in `docs/PIPELINE.md`.
 
 ## The red PR — exact body, unexecuted
 

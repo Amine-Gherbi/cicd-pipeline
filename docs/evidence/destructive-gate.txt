@@ -1,0 +1,1 @@
+check-destructive: 1 migration file(s) checked, no unlabelled destructive statements
