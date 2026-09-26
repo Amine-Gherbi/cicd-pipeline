@@ -83,52 +83,77 @@ command_is_our_release() {
   return 1
 }
 
-msys_pid_of() {
-  local win="$1"
-  ps -W 2>/dev/null | awk -v win="$win" '$4 == win { print $1; exit }'
-}
-
+# The WINPID that netstat reports is the only stable handle on this host: an
+# MSYS pid is meaningful only inside the shell session that spawned the process,
+# and `kill` on it does not terminate a node.exe started by another session.
+# Match the WINPID column of `ps -W` instead.
 pid_alive() {
-  local pid="$1" msys
+  local pid="$1"
   [ -n "$pid" ] || return 1
   if on_windows; then
-    msys=$(msys_pid_of "$pid")
-    [ -n "$msys" ] || return 1
-    kill -0 "$msys" 2>/dev/null
+    ps -W 2>/dev/null | awk -v win="$pid" '$4 == win { found = 1 } END { exit(found ? 0 : 1) }'
     return $?
   fi
   kill -0 "$pid" 2>/dev/null
 }
 
+# Milliseconds since the epoch, for the "port free after" report.
+now_ms() {
+  local t
+  if [ -n "${EPOCHREALTIME:-}" ]; then
+    t=${EPOCHREALTIME//[.,]/}
+    printf '%s' "$((t / 1000))"
+  else
+    printf '%s' "$(($(date +%s) * 1000))"
+  fi
+}
+
+# Stop a process by WINPID. On Windows taskkill is the primary path, never a
+# fallback: `taskkill /F /T` terminates the process and its tree directly, and
+# there is no other mechanism to improvise with. If taskkill is missing the
+# caller must see the failure. On POSIX, SIGTERM then SIGKILL.
+STOP_ELAPSED_MS=0
 stop_pid() {
-  local pid="$1" msys="" i
+  local pid="$1" i
+  STOP_ELAPSED_MS=0
   if ! pid_alive "$pid"; then
     return 0
   fi
+
   if on_windows; then
-    msys=$(msys_pid_of "$pid")
-  fi
-  if [ -n "$msys" ]; then
-    if kill "$msys" 2>/dev/null; then :; fi
-    for i in $(seq 1 50); do
-      pid_alive "$pid" || return 0
+    if ! command -v taskkill >/dev/null 2>&1; then
+      echo "stop_pid: taskkill is unavailable; refusing to improvise a kill for WINPID $pid" >&2
+      return 1
+    fi
+    MSYS_NO_PATHCONV=1 taskkill /PID "$pid" /F /T >/dev/null 2>&1 || :
+    for i in $(seq 1 100); do
+      if ! pid_alive "$pid"; then
+        STOP_ELAPSED_MS=$((i * 100))
+        return 0
+      fi
       sleep 0.1
     done
-    if kill -9 "$msys" 2>/dev/null; then :; fi
-  elif on_windows && command -v taskkill >/dev/null 2>&1; then
-    if MSYS_NO_PATHCONV=1 taskkill /PID "$pid" /F >/dev/null 2>&1; then :; fi
-  else
-    if kill "$pid" 2>/dev/null; then :; fi
-    for i in $(seq 1 50); do
-      pid_alive "$pid" || return 0
-      sleep 0.1
-    done
-    if kill -9 "$pid" 2>/dev/null; then :; fi
+    STOP_ELAPSED_MS=10000
+    return 1
   fi
-  for i in $(seq 1 30); do
-    pid_alive "$pid" || return 0
+
+  kill "$pid" 2>/dev/null || :
+  for i in $(seq 1 100); do
+    if ! pid_alive "$pid"; then
+      STOP_ELAPSED_MS=$((i * 100))
+      return 0
+    fi
     sleep 0.1
   done
+  kill -9 "$pid" 2>/dev/null || :
+  for i in $(seq 1 50); do
+    if ! pid_alive "$pid"; then
+      STOP_ELAPSED_MS=$((10000 + i * 100))
+      return 0
+    fi
+    sleep 0.1
+  done
+  STOP_ELAPSED_MS=15000
   return 1
 }
 
@@ -136,7 +161,7 @@ stop_pid() {
 # rebuilding that directory fails with EBUSY. Stop it only when its command
 # line proves it belongs to this repository; never kill a foreign listener.
 ensure_port_available() {
-  local pid cmd waited
+  local pid cmd waited recorded stopped t0 t1 elapsed
   pid=$(port_listener_pid)
   [ -n "$pid" ] || return 0
 
@@ -146,20 +171,38 @@ ensure_port_available() {
     exit 1
   fi
 
-  echo "==> demo: stopping pid $pid on port $PORT before building (its command line runs a release in this repo: $cmd)"
-  if ! stop_pid "$pid"; then
-    echo "demo: could not stop pid $pid" >&2
+  stopped="$pid"
+  echo "==> demo: stopping WINPID $stopped on port $PORT before building (its command line runs a release in this repo: $cmd)"
+  t0=$(now_ms)
+  if ! stop_pid "$stopped"; then
+    echo "demo: could not stop WINPID $stopped" >&2
     exit 1
   fi
 
+  # Clear the state file only when it names the process we just stopped; a
+  # different PID is not ours to discard.
+  recorded=$(cat "$STATE_DIR/service.pid" 2>/dev/null) || recorded=""
+  recorded=$(printf '%s' "$recorded" | tr -d '[:space:]')
+  if [ "$recorded" = "$stopped" ]; then
+    rm -f "$STATE_DIR/service.pid"
+  fi
+
+  # The kill is proven only when netstat stops listing the port: poll it, never
+  # sleep a fixed amount and assume.
   waited=0
   while [ "$waited" -lt 100 ]; do
     pid=$(port_listener_pid)
-    [ -z "$pid" ] && return 0
+    if [ -z "$pid" ]; then
+      t1=$(now_ms)
+      elapsed=$((t1 - t0))
+      printf '==> demo: stopped WINPID %s; port %s free after %d.%03ds\n' \
+        "$stopped" "$PORT" $((elapsed / 1000)) $((elapsed % 1000))
+      return 0
+    fi
     sleep 0.1
     waited=$((waited + 1))
   done
-  echo "demo: port $PORT is still held by $pid after stopping it" >&2
+  echo "demo: port $PORT is still held by $pid after stopping WINPID $stopped" >&2
   exit 1
 }
 
