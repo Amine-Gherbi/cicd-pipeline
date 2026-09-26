@@ -42,13 +42,15 @@ PORT=8787 ./scripts/release-local.sh status                           # current,
 ```
 
 ```powershell
-# Windows PowerShell 5.1 — no `VAR=value cmd`, no `&&`, no `tail`
+# Windows PowerShell 5.1 — no `VAR=value cmd`, no `&&`, no `tail`,
+# and `bash` here resolves to WSL (no node), so call Git bash explicitly.
+$gitBash = 'C:/Program Files/Git/bin/bash.exe'
 $env:PORT = '8787'
-bash scripts/release-local.sh (git rev-parse HEAD)                    # healthy: wait → smoke
+& $gitBash scripts/release-local.sh (git rev-parse HEAD)              # healthy: wait → smoke
 $env:RELEASE_FAULT = 'invoices-500'
-bash scripts/release-local.sh (git rev-parse HEAD) broken             # fails smoke, rolls back
-$env:RELEASE_FAULT = ''
-bash scripts/release-local.sh status
+& $gitBash scripts/release-local.sh (git rev-parse HEAD) broken       # fails smoke, rolls back
+Remove-Item Env:RELEASE_FAULT
+& $gitBash scripts/release-local.sh status
 Get-Content deploy.log -Tail 12                                       # deploy.start → health.ok → smoke.fail → rollback.start
 ```
 
