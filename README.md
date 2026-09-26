@@ -35,10 +35,26 @@ npm run verify              # lint + typecheck + integration tests
 Deploy and exercise the gate:
 
 ```bash
-./scripts/release-local.sh "$(git rev-parse HEAD)"          # healthy: wait → smoke
-RELEASE_FAULT=invoices-500 ./scripts/release-local.sh "$(git rev-parse HEAD)" broken
-./scripts/release-local.sh status                           # current, previous, deploy.log
+# git-bash / Linux
+PORT=8787 ./scripts/release-local.sh "$(git rev-parse HEAD)"          # healthy: wait → smoke
+RELEASE_FAULT=invoices-500 PORT=8787 ./scripts/release-local.sh "$(git rev-parse HEAD)" broken
+PORT=8787 ./scripts/release-local.sh status                           # current, previous, deploy.log
 ```
+
+```powershell
+# Windows PowerShell 5.1 — no `VAR=value cmd`, no `&&`, no `tail`
+$env:PORT = '8787'
+bash scripts/release-local.sh (git rev-parse HEAD)                    # healthy: wait → smoke
+$env:RELEASE_FAULT = 'invoices-500'
+bash scripts/release-local.sh (git rev-parse HEAD) broken             # fails smoke, rolls back
+$env:RELEASE_FAULT = ''
+bash scripts/release-local.sh status
+Get-Content deploy.log -Tail 12                                       # deploy.start → health.ok → smoke.fail → rollback.start
+```
+
+The service is started detached, so the PowerShell call can return before the smoke output finishes
+printing. The truth is `deploy.log`, not the console.
+
 
 ## Two lanes, never conflated
 
