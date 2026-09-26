@@ -8,9 +8,12 @@ Two status values are used, and they are not interchangeable:
   and/or the Docker daemon. No output is claimed.
 
 Environment facts behind the unverified column: `git remote -v` is empty (no
-remote, no Actions, no PRs), and `docker info` fails with pipe access denied (no
-local image builds). Local PostgreSQL 16.13 (`select version()`) listens on
-port 5433 and was reachable for the migration test below.
+remote, no Actions, no PRs). The Docker engine was **down** when this file was
+first written (`docker info` → pipe access denied); on 2026-10-23 it came up
+(server 28.1.1, linux/amd64) and the local image build below was run for real.
+Local PostgreSQL 16.13 (`select version()`) listens on port 5433 and was
+reachable for the migration test below.
+
 
 Fresh runs from 2026-10-23 are saved under `docs/evidence/`. `docs/PROOF.md`
 indexes every claim to its command; this file is the full observation log.
@@ -109,6 +112,23 @@ database was dropped afterwards. This proves the fixture and the commands on a
 real PostgreSQL 16; it does **not** prove the Actions service container behaves
 identically.
 
+### Local image build — measured 2026-10-23
+
+The Docker engine came up on this machine (server 28.1.1, linux/amd64), so the
+Dockerfile was built for real rather than left as a claim:
+
+| Claim | Command | Observed |
+|---|---|---|
+| the image builds from this Dockerfile | `docker build -t invoice-api:local .` | built, image id `881604849cd3` |
+| the container starts and Node is present | `docker run --rm invoice-api:local node -e "console.log('container ok', process.version)"` | `container ok v22.23.4`, exit 0 |
+| image size | `docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}'` | **535 MB** — the plan's 120 MB target is **not met** |
+| where the size goes | `docker history invoice-api:local` | `npm ci --omit=dev` 206 MB, `@prisma/client` 77 MB, `.prisma` 24 MB, rest base image |
+
+The 535 MB figure is reported, not excused: a slim runtime (alpine + pruned
+Prisma engines, or shipping `dist` and running `prisma generate` outside the
+image) is the obvious fix and is **not done**. Full log:
+`_orchestration/evidence/docker-c3.txt`.
+
 ## Unverified — needs a remote and/or Actions
 
 Every row below is `unverified`. No run, check, PR, attestation or registry
@@ -129,7 +149,6 @@ artifact exists for this repository.
 | gitleaks blocks a committed secret | a second draft PR with a canary token; `gh pr checks <n>` | `unverified` |
 | image provenance verifies | `gh attestation verify oci://ghcr.io/{owner}/invoice-api@sha256:<digest> --repo {owner}/invoice-api` | `unverified` |
 | keyless signature verifies | `cosign verify ghcr.io/{owner}/invoice-api@sha256:<digest>` | `unverified` |
-| the image builds from this Dockerfile | `docker build -t invoice-api:local .` | `unverified` |
 | P2's published image signature verifies | `cosign verify ghcr.io/<owner>/ecommerce-platform@sha256:<digest> --certificate-identity-regexp '…/release.yml@refs/heads/main' --certificate-oidc-issuer https://token.actions.githubusercontent.com` | `unverified` |
 | P2's provenance attestation verifies | `gh attestation verify oci://ghcr.io/<owner>/ecommerce-platform@sha256:<digest> --repo <owner>/ecommerce-platform --signer-workflow <owner>/ecommerce-platform/.github/workflows/release.yml` | `unverified` |
 | the attested P2 commit is deployable locally | `./scripts/release-local.sh <sha>` in the `ecommerce-platform` repository | `unverified` |
