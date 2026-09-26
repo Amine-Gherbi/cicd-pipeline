@@ -3,8 +3,7 @@
 This document describes `.github/workflows/pr.yml`: the gates a pull request
 must pass before it can merge. It is deliberately narrower than the whole
 delivery story — the release lane (tag → image → attest → push) is not present
-in this repository yet and is not claimed here. The promotion path below is a
-documented, unexecuted path, not a run.
+in this repository and is not claimed here.
 
 ## One required check: `ci-ok`
 
@@ -116,53 +115,23 @@ The CI lane cannot deploy: the runner cannot reach this machine, and there is
 no paid staging host (decision recorded 2026-10-22). Neither lane stands in for
 the other.
 
-## Promotion path — a verified path, not a verified run
+## What this repository ships
 
-Promotion is **artifact-only**: P3 verifies the image P2 published, and never
-imports P2's code. The image is the interface. The commit behind it is deployed
-by the local lane, not by the CI lane.
+The only artifact this repository builds and scans is its own demo service,
+`invoice-api`. It does not build, verify, or ship the P2 storefront image. The
+store was rebuilt independently and this pipeline never consumed its image, so
+there is no artifact path from P2 into this repository:
 
-Let `<owner>` be the account and `<digest>` the `sha256:…` digest P2's release
-workflow pushed. A reviewer with registry access runs both checks:
+- `Dockerfile` builds `invoice-api` from this repository's `src/` and `prisma/`.
+- The `image` and `trivy` jobs inspect that image only.
+- `release-local.sh` builds and swaps `invoice-api` from this repository; it
+  never fetches or runs the storefront.
+- There is no `release.yml`, no registry push and no OIDC token here, so no
+  attestation exists for either project to verify.
 
-```bash
-# 1. The signature was made by P2's release workflow identity, keyless via OIDC.
-digest=sha256:<digest>
-cosign verify "ghcr.io/<owner>/ecommerce-platform@${digest}" \
-  --certificate-identity-regexp '^https://github\.com/<owner>/ecommerce-platform/\.github/workflows/release\.yml@refs/heads/main$' \
-  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
-
-# 2. The provenance attestation binds that digest to the repository and workflow.
-gh attestation verify "oci://ghcr.io/<owner>/ecommerce-platform@${digest}" \
-  --repo <owner>/ecommerce-platform \
-  --signer-workflow <owner>/ecommerce-platform/.github/workflows/release.yml
-```
-
-What each command actually proves:
-
-| Command | Proves | Does **not** prove |
-|---|---|---|
-| `cosign verify` | the digest was signed by that workflow's OIDC identity, so an arbitrary pusher cannot substitute it | that the image runs, or that the tests passed |
-| `gh attestation verify` | the provenance statement ties the digest to the repository, commit and signing workflow | that the commit is safe to deploy |
-| `release-local.sh` (P2 repository, same commit) | the attested commit can be built, swapped, waited for, smoked and rolled back on a machine | that the deployed bytes are the registry digest — the local lane builds from source |
-
-The deploy half, run in the **P2 repository** (P3's `release-local.sh` deploys
-`invoice-api`, not the Next app):
-
-```bash
-git -C ../ecommerce-platform rev-parse HEAD     # must be the attested revision
-./scripts/release-local.sh "$(git -C ../ecommerce-platform rev-parse HEAD)"
-```
-
-**Status: `unverified`.** This machine has no git remote, no GHCR credentials
-and no P2 run, so neither verify command nor the deploy has executed. It is a
-verified *path* in the sense that the artifact boundary is enforced and each
-failure mode is named; it is **not** a verified *run*. `docs/EVIDENCE.md`
-records both commands as unverified rows.
-
-The digest is never replaced by a tag: a tag can move, a digest cannot. That is
-why the commands above take `@sha256:…` and why the local lane records the full
-commit SHA in `.releases/<sha>/manifest.json`.
+The local lane still records the full commit SHA in
+`.releases/<sha>/manifest.json`; a digest is never replaced by a tag, because a
+tag can move and a digest cannot.
 
 ## Portable core
 
@@ -176,10 +145,10 @@ understands.
 |---|---|---|---|---|
 | lint / type / unit | tsc + eslint | tsc + eslint + vitest | **tsc + eslint + vitest** | ruff + mypy + pytest |
 | trivy fs + gitleaks | yes | yes | **yes** | yes |
-| image build + scan + attest | no | yes (P2 owns the publish; verified from here only by command) | **yes (written, unverified here)** | yes |
+| image build + scan | no | yes (P2 builds its own image) | **yes (`invoice-api`; build and Trivy measured 2026-10-23, attestation only in Actions)** | yes |
 | migration gate | no | Prisma | **Prisma + lock timeout + drift + destructive check** | Alembic |
 | smoke | preview URL | preview deploy | **local release lane, 5 assertions** | eval report |
-| release | static deploy | static deploy + image | **GHCR + tag (path only) + local swap** | GHCR + eval artifact |
+| release | static deploy | static deploy + image | **local swap (measured) + GHCR/tag (path only, unexecuted)** | GHCR + eval artifact |
 
 The one string that must match repository settings is `ci-ok` in every project
 that uses this shape. Nothing else is required by the ruleset.

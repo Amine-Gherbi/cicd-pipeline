@@ -167,8 +167,8 @@ rollback.smoke.ok 2026-10-23T00:18:47Z
 
 `previous` equals `current` after a rollback because the recorded
 `PREVIOUS_REF` was the good release and it is now serving again. The broken
-release is not promoted to "previous"; it was never live long enough to pass the
-gate.
+release is never recorded as the new `previous`; it was not live long enough to
+pass the gate.
 
 ## Why `/ready` 500 is caught before smoke
 
