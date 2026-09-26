@@ -123,11 +123,18 @@ Dockerfile was built for real rather than left as a claim:
 | the container starts and Node is present | `docker run --rm invoice-api:local node -e "console.log('container ok', process.version)"` | `container ok v22.23.4`, exit 0 |
 | image size | `docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}'` | **535 MB** — the plan's 120 MB target is **not met** |
 | where the size goes | `docker history invoice-api:local` | `npm ci --omit=dev` 206 MB, `@prisma/client` 77 MB, `.prisma` 24 MB, rest base image |
+| Trivy scan, CRITICAL/HIGH, fix available only | `trivy image --severity CRITICAL,HIGH --ignore-unfixed invoice-api:local` | **11 HIGH, 0 CRITICAL — the CI gate would FAIL** (`exit-code: '1'`) |
+| where the findings are | `trivy image --format json` → `evidence/trivy.json` | `brace-expansion` ×4, `picomatch`, `deepmerge-ts`, `sigstore`, all fixable by version bump |
 
 The 535 MB figure is reported, not excused: a slim runtime (alpine + pruned
 Prisma engines, or shipping `dist` and running `prisma generate` outside the
 image) is the obvious fix and is **not done**. Full log:
-`_orchestration/evidence/docker-c3.txt`.
+`_orchestration/evidence/docker-c3.txt`, Trivy JSON: `_orchestration/evidence/trivy.json`.
+
+The scan is the more useful finding: **the image as built would be blocked by its
+own Trivy gate** (11 HIGH with fixes available, largely transitive dev packages
+surviving `npm ci --omit=dev`). That is the gate working, not failing —
+`docs/PIPELINE.md` lists it as a gate precisely because it can stop a build.
 
 ## Unverified — needs a remote and/or Actions
 
