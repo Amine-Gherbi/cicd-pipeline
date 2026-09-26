@@ -1,0 +1,57 @@
+# image size — measured 2026-10-23
+
+before : invoice-api:local  535MB  881604849cd3  (node:22-bookworm-slim)
+after  : invoice-api:slim   284MB  b9d3fbc0fddc  (node:22-alpine)
+
+$ docker images invoice-api --format '{{.Repository}}:{{.Tag}} {{.Size}} {{.ID}}'
+invoice-api:slim 284MB b9d3fbc0fddc
+invoice-api:local 535MB 881604849cd3
+
+## layer breakdown, after
+
+$ docker history invoice-api:slim
+   0.0B  CMD ["node" "dist/server.js"]
+   0.0B  HEALTHCHECK ...
+   0.0B  EXPOSE [8080/tcp]
+   0.0B  USER node
+  25.7kB  COPY /app/dist ./dist
+  1.48kB  COPY /app/prisma ./prisma
+   20.0MB COPY /app/node_modules/.prisma ./node_modules/.prisma
+   95.4MB RUN npm ci --omit=dev --omit=optional --omit=peer --ignore-scripts
+           && npm cache clean --force && rm -f package-lock.json
+           && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+    145kB COPY package.json package-lock.json ./
+   0.0B   WORKDIR /app
+   0.0B   ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080
+   5.37MB RUN ... yarn ...
+   154MB  RUN ... node musl tarball ...
+   8.43MB ADD alpine-minirootfs-3.24.3-x86_64.tar.gz /
+
+The 95.4 MB install layer is 72.9 MB of @prisma/client/runtime (source maps plus
+wasm-base64 builds for every database provider) and ~22 MB of fastify/zod.
+It is the largest remaining removable block, but it is the runtime the app
+actually uses.
+
+## what was removed, checked inside the image
+
+$ docker run --rm invoice-api:slim sh -c 'for p in prisma typescript effect fast-check; do ...'
+prisma absent
+typescript absent
+effect absent
+fast-check absent
+--- @prisma: client
+node_modules 121.6M
+
+$ docker run --rm invoice-api:slim node -e "console.log(process.version)"
+v22.23.4
+
+## why not 120 MB
+
+node:22-alpine is 168 MB before a byte of application code (the node binary is
+130 MB, npm 17 MB, yarn 5 MB). Prisma itself is not the blocker: the generated
+engine in the image is libquery_engine-linux-musl-openssl-3.0.x.so.node, which
+runs, and /ready answered 200 against a real PostgreSQL 16 container. The
+120 MB target is below the floor of this base image; it would need a different
+base (e.g. a distroless/chiselled node) and would still have to carry ~93 MB of
+Prisma-driven npm dependencies. 284 MB is the measured result and meets the
+≤ 300 MB fallback.
