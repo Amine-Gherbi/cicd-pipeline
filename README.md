@@ -1,5 +1,7 @@
 # cicd-pipeline
 
+**Case study:** https://gherbi.pages.dev/projects/cicd-pipeline/ — the release lane runs locally; the GitHub Actions lane has not run (see *Status*).
+
 `invoice-api` is a Fastify + Prisma + PostgreSQL service, and this repository is
 the delivery pipeline that gates it. The PR workflow defines eight gate jobs and
 one aggregator status, `ci-ok`. The local lane builds a release, swaps
