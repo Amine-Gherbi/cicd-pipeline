@@ -50,8 +50,8 @@ Every other number in this table was measured earlier on 2026-10-23 and is
 | the bundle budget has headroom | `npm run build && du -sk dist` | `64 dist` (64 KiB) against a 512 KiB budget |
 | the Dockerfile is multi-stage, non-root and has a healthcheck | `grep -nE '^(FROM\|USER\|HEALTHCHECK\|EXPOSE)' Dockerfile` | 2 `FROM` stages (build, runtime); `USER node`; `HEALTHCHECK`; `EXPOSE 8080`; `npm ci --omit=dev` in runtime. This is a structural check, not a build. |
 | `capture-assets` writes four WebP at the contract size | `node scripts/capture-assets.mjs` | `hero.webp`, `shot-01..03.webp`: all 2880x1800 WebP; manifest with 6 measurements, 3 invariants, 5 limits |
-| the hub accepts the snapshot | `ASSET_ROOT=… ASSET_PROJECTS_DIR=… node portfolio-site/scripts/check-assets.mjs` | `manifest valid, 4 shots present, 6 measurements and 3 invariants backed by files`; exit 0 |
-| the hero is labelled as a mock | `node -e "console.log(require('../_shared/assets/cicd-pipeline/manifest.json').shots[0].alt)"` | `alt` begins “Mock of the blocked pull-request check page, rendered from .github/workflows/pr.yml”; the image itself carries the same label |
+| the previous snapshot passed the hub contract | `ASSET_ROOT=… ASSET_PROJECTS_DIR=… node portfolio-site/scripts/check-assets.mjs` | `manifest valid, 4 shots present, 6 measurements and 3 invariants backed by files`; exit 0. The re-captured manifest omits `generatedAt` to keep calendar dates out, so the current schema reports that field as required. |
+| the hero is a transcript of the demo run | `node -e "console.log(require('../_shared/assets/cicd-pipeline/manifest.json').shots[0].alt)"` | `alt` begins “Terminal transcript of bash scripts/demo.sh on this machine”; the image shows the healthy release, the deliberately broken release and the rollback |
 
 ### Destructive gate replay
 
