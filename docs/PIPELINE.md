@@ -179,7 +179,7 @@ workflow for the first time on the merge of W3-a:
 - **The fix** is on `w3-b1-green-lane`: `needs: [image]` on `trivy`, a guarded
   SARIF upload, and a code-scanning availability probe so a disabled scanning
   target cannot turn a clean scan red.
-- **Green run:** `RUN_URL_TBD`. **Pushed digest:** `DIGEST_TBD`.
+- **Green run:** `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`. **Pushed digest:** `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`.
 
 Locally on 2026-10-29: `bash scripts/verify.sh` exit 0 (9/9 tests);
 `docker build -t invoice-api:$SHA .` exit 0; `trivy image --exit-code 1
