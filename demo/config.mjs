@@ -15,7 +15,9 @@ export const config = Object.freeze({
   dispatchRef: env.DISPATCH_REF || 'master',
   workflowFile: 'demo.yml',
   renderKey: env.RENDER_API_KEY || '',
-  renderServiceId: env.RENDER_SERVICE_ID || '',
+  // Render injects its own RENDER_SERVICE_ID into every service, so the
+  // service the demo targets has to live under a name Render does not own.
+  renderServiceId: env.INVOICE_RENDER_SERVICE_ID || '',
   invoiceApiUrl: (env.INVOICE_API_URL || 'https://invoice-api-26b4.onrender.com').replace(/\/+$/, ''),
   smokeToken: env.SMOKE_TOKEN || '',
   badReleaseSha: env.BAD_RELEASE_SHA || '',
