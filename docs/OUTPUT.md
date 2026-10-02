@@ -975,6 +975,18 @@ The page is <https://pipeline-demo-57mh.onrender.com> (Render service
 `autoDeploy: no`, built from `Dockerfile.demo`). `/api/state` answers
 `{"readOnly":false,"reason":null}`.
 
+The page tracks `master` (commit `6bc6ad9`) and every button dispatches a real workflow on the default branch.
+
+### Run URLs — produced by clicking the page, on `master`
+
+| Action | Run | Result |
+| --- | --- | --- |
+| *Run the gates* | <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40929946794> | `success` — the eight gates, `ci-ok`, `publish` and `deploy` |
+| *Ship a bad image* | <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40930412365> | `failure` at **`bad-image-trivy`** — the scanner found 10 HIGH in the pinned `node:18.12.0-alpine` base and 36 (35 HIGH, 1 CRITICAL) in its dependencies |
+
+Both were started by `POST /api/run` on the hosted page, which answered `202` with a
+dispatch id and then polled the run: the browser never held a token.
+
 ### The page holds no credential
 
 ```bash
