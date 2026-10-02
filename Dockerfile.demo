@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+# The demo page is a plain-ESM Fastify service: demo/ has .mjs files only,
+# no tsconfig and no compile step. This image only installs the runtime
+# dependencies, copies the page and the smoke script the rollback runs, and
+# starts the server on Render's PORT (8090 by default).
+
+FROM node:22-alpine
+
+# smoke.sh is bash, and its assertions use curl. Both are in the image so the
+# rollback re-runs the exact script the deploy job runs, not a re-implementation.
+RUN apk add --no-cache bash curl
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --omit=optional --omit=peer --ignore-scripts \
+    && npm cache clean --force
+
+COPY --chown=node:node demo ./demo
+COPY --chown=node:node scripts/smoke.sh ./scripts/smoke.sh
+RUN mkdir -p /app/.deploy && chown node:node /app/.deploy
+
+USER node
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=8090
+EXPOSE 8090
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||8090)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "demo/server.mjs"]

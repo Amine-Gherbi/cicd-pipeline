@@ -30,4 +30,22 @@ export default tseslint.config(
       },
     },
   },
+  {
+    // demo/ is plain ESM with no build step. It runs under Node and talks to
+    // providers through fetch, so the same globals are declared explicitly.
+    files: ['demo/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        AbortSignal: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        clearTimeout: 'readonly',
+        console: 'readonly',
+        fetch: 'readonly',
+        globalThis: 'readonly',
+        process: 'readonly',
+        setTimeout: 'readonly',
+      },
+    },
+  },
 );
