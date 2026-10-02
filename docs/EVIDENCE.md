@@ -95,8 +95,11 @@ are applied to Neon from this machine before the deploy; `/ready` fails with
 `pending_migrations` if the image and the database disagree, and smoke assertion
 2 fails on that, so a service with missing tables cannot pass the gate.
 
-Not yet observed: the `deploy` job inside Actions. It becomes observable only
-after this branch is merged and a master run starts. `TODO_SUPERVISOR`.
+Observed: run [40920824698](https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40920824698) on `master` pushed the gates, `publish` and `deploy` through to green.
+The deploy job triggered Render deploy `dep-dbho33ajnfac73agiofg` for commit `e7acbd2`, waited for `live`, then ran the five
+smoke assertions against <https://invoice-api-26b4.onrender.com>: `PASS 1/5 /health 200`,
+`PASS 2/5 /ready 200 database+ok migrations+ok`, `PASS 3/5 POST /invoices 401 then 201`,
+`PASS 4/5 GET /invoices/<uuid> 404 not_found`, `PASS 5/5 /ready p95 142.6 ms < 1000 ms`.
 
 ## Verified locally
 
