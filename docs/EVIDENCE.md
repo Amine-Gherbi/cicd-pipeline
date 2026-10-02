@@ -83,7 +83,7 @@ the branch is merged and a master run starts.
 | the service URL | service create response | <https://invoice-api-26b4.onrender.com> (Render assigned the `-26b4` suffix; the bare name was unavailable) |
 | a deploy of the tracked commit is live | `GET /v1/services/srv-dbhni75g1s2s73ahheig/deploys/dep-dbhnjfg8v5cc738v0mq0` | `status: live`, commit `f6c4355f2a6e7e01a884b2a599002f9b570b42a1`, started `16:52:14Z`, finished `16:52:51Z` |
 | the public service answers | `curl /health`, `curl /ready` | `/health` 200 `{"status":"ok"}`; `/ready` 200 `{"status":"ok","checks":{"database":"ok","migrations":"ok"}}` |
-| the five smoke assertions pass against the public URL | `SMOKE_TOKEN=… bash scripts/smoke.sh https://invoice-api-26b4.onrender.com` | `5 of 5 assertions`, exit 0; `/ready` p95 `382.8 ms < 1000 ms` (the public-URL budget; local stays 300 ms) |
+| the five smoke assertions pass against the public URL | `SMOKE_TOKEN=… bash scripts/smoke.sh https://invoice-api-26b4.onrender.com` | `5 of 5 assertions`, exit 0; `/ready` p95 `166.1 ms < 1000 ms` (the public-URL budget; local stays 300 ms) |
 | the `deploy` job is master-only and bounded | `npx --yes js-yaml .github/workflows/pr.yml` plus a structural read | job exists; `if: github.ref == 'refs/heads/master'`; `needs: [ci-ok, publish]`; deploy poll deadline 600 s; `/health` poll deadline 360 s; no `continue-on-error` |
 | the trigger secret names exist | `gh secret list --repo Amine-Gherbi/cicd-pipeline` | `RENDER_API_KEY` and `SMOKE_TOKEN`; names only, no value printed or committed |
 | a deploy hook could not be created through the API | `GET /v1/services/srv-dbhni75g1s2s73ahheig/deploy-hooks` | `404 page not found`; the job therefore uses `RENDER_API_KEY` and calls `POST /deploys` with `commitId` |

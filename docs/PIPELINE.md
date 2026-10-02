@@ -211,8 +211,11 @@ request cannot reach it and it cannot deploy a branch other than `master`.
   instance cold-starts in about 60 s; every wait is bounded.
 - **Smoke:** `bash scripts/smoke.sh "$PUBLIC_URL"` runs the same five
   assertions and fails the job. The latency assertion keeps the 300 ms local
-  budget and uses 1000 ms for a public URL, because each sample opens a fresh TLS
-  connection across the internet; the budget used is printed in the line.
+  budget and uses 1000 ms for a public URL: the samples share one TLS
+  connection (one curl, six URLs, first transfer discarded), but a free
+  instance and the public network still vary, so the wider budget keeps the
+  gate about the service rather than about the internet. The budget used is
+  printed in the line.
 - **Summary:** the job writes the run URL, deploy id, commit, public URL and the
   smoke transcript to `$GITHUB_STEP_SUMMARY`.
 
