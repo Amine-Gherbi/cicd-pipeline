@@ -6,10 +6,13 @@ command that would prove it. There is no third state, and a screenshot is never
 the evidence.
 
 Environment: Windows 11, Git Bash, Node v22.23.4, PostgreSQL 16.13 on
-`localhost:5433`, service on `127.0.0.1:8787`. `git remote -v` is empty.
-`docker info` reports server 28.1.1 (2026-10-23); the local image build and
-Trivy run are recorded in `docs/EVIDENCE.md` (`docs/evidence/image-size.txt`,
-`docs/evidence/trivy-after.txt`).
+`localhost:5433`, service on `127.0.0.1:8787`. `git remote -v` shows `origin` →
+`https://github.com/Amine-Gherbi/cicd-pipeline.git` (since 2026-10-29), so
+Actions runs exist. `docker info` reports server 28.1.1 (2026-10-23); the local
+image build and Trivy run are recorded in `docs/EVIDENCE.md`
+(`docs/evidence/image-size.txt`, `docs/evidence/trivy-after.txt`). The hosted
+target is Render service `invoice-api`
+(<https://invoice-api-26b4.onrender.com>), backed by Neon database `invoice`.
 
 Full commands and observations: [`docs/EVIDENCE.md`](EVIDENCE.md). This page is
 the index; `docs/PIPELINE.md` explains why each gate exists. Captured local
@@ -85,39 +88,40 @@ adding `drift_probe` made diff exit 2; the scratch database was dropped. This
 proves the fixture and the commands on PostgreSQL 16, **not** that the Actions
 service container behaves identically.
 
-## Cannot run here — `unverified`
+## Verified in Actions or against the hosted target
 
-No row below has output because no remote or registry credential exists on this
-machine. Docker itself is available (28.1.1, re-checked 2026-10-23); the local
-image build, Trivy scan and container run are in the table above. Running a
-mock and calling it evidence is the failure this project is about.
+Runs 40902199280 and 40905865091 executed after the remote was added. The second
+is fully green on `master`; its `publish` job pushed and keyless-signed digest
+`sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`. The
+hosted target is Render service `invoice-api`
+(`srv-dbhni75g1s2s73ahheig`) at
+<https://invoice-api-26b4.onrender.com>, backed by Neon database `invoice`;
+public smoke passes 5/5 from this machine. Commands and output:
+`docs/EVIDENCE.md`, `docs/OUTPUT.md`.
 
-| Claim | Command that would prove it | Missing prerequisite |
+| Claim | Command that proves it | Status |
 |---|---|---|
-| Actions executes the workflow | `gh run list --workflow=pr.yml` | no git remote |
-| All eight gates go green on a clean PR | `gh run view <run-id> --log` | no run |
-| The ruleset requires exactly `ci-ok` | `gh api repos/<owner>/<repo>/branches/main/protection` (or the ruleset page) | settings live on GitHub |
-| A red PR cannot merge | `gh pr checks <n>`; `gh pr view <n> --json mergeStateStatus` → `BLOCKED` | no PR |
-| The red PR fails in `trivy`, not elsewhere | `gh run view <run-id> --log --job=trivy` | no run |
-| The image meets the registry size target | `docker buildx imagetools inspect ghcr.io/<owner>/invoice-api@sha256:<digest>` | no registry artifact |
-| BuildKit cache helps | `grep -c CACHED build.log`; `gh api …/actions/caches` | no build log |
-| The signature verifies | `cosign verify ghcr.io/<owner>/invoice-api@sha256:<digest> …` | no signature, no GHCR |
-| Provenance verifies | `gh attestation verify oci://ghcr.io/<owner>/invoice-api@sha256:<digest> --repo <owner>/invoice-api` | no attestation |
-
-The release lane is not present in this repository yet: there is no
-`release.yml`, no registry push, and no OIDC token outside Actions. The
-`Dockerfile` has been built and scanned locally (measured 2026-10-23); what
-remains unverified is the runner's build and the registry/attestation half.
+| Actions executes the workflow | `gh run list --workflow=pr.yml` | `verified` — run 40902199280 |
+| All eight gates go green | `gh run view 40905865091 --log` | `verified` on `master`; a clean PR run is unobserved |
+| The ruleset requires exactly `ci-ok` | `gh api repos/<owner>/<repo>/branches/master/protection` | `unverified` — settings live on GitHub |
+| A red PR cannot merge | `gh pr checks <n>`; `gh pr view <n> --json mergeStateStatus` | `unverified` — no PR opened |
+| The red PR fails in `trivy`, not elsewhere | `gh run view <run-id> --log --job=trivy` | `unverified` — no PR opened |
+| The registry digest exists | `docker buildx imagetools inspect ghcr.io/amine-gherbi/invoice-api:sha-<sha>` | `verified` by the `publish` job in run 40905865091 |
+| The signature verifies | `cosign verify ghcr.io/amine-gherbi/invoice-api@sha256:…` | `verified in the publish job`; no separate transcript here |
+| Provenance verifies | `gh attestation verify oci://ghcr.io/…` | `unverified` — no attestation artifact |
+| The hosted deploy job goes green | `gh run view <run-id> --log --job=deploy` | `unverified` — first runs after this branch merges |
+| Public smoke passes | `bash scripts/smoke.sh https://invoice-api-26b4.onrender.com` | `verified` — 5/5 on 2026-10-29 |
 
 ## What no command on this machine can prove
 
-- That the CI lane deploys. It does not, by design: a GitHub runner cannot
-  reach this host, and there is no paid staging host (decision 2026-10-22).
+- That the hosted `deploy` job passes inside Actions. The job exists and parses;
+  its first master run is the remaining observation.
 - That the local lane deploys the registry digest. It builds from source. The
-  digest and the commit are bound by the attestation, not by the local script.
+  hosted lane asks Render to build the same commit, and `commitId` binds the
+  deploy to that commit; it does not pull the GHCR digest either.
 - That the Actions PostgreSQL service container behaves like the local
   PostgreSQL 16. The migration replay narrows the gap; it does not close it.
-- That `http://127.0.0.1:8787` is clickable by a reviewer. It is local only.
+- That a red PR blocks a merge. No red PR has been opened yet.
 
 ## The single check to run first
 

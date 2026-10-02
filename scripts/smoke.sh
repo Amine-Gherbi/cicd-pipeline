@@ -10,9 +10,14 @@
 #   4. GET  /invoices/<random-uuid>     -> 404 {error:{code:"not_found"}}, no stack
 #   5. GET  /ready latency              -> p95 < 300 ms, 5 warm samples after one warm-up
 #
+# Usage: scripts/smoke.sh [base-url]
+#   no argument    local release on http://127.0.0.1:8787
+#   base-url       that URL, e.g. https://invoice-api-26b4.onrender.com
+#
 # PORT: 8787 on this host (8080 is inside Windows' excluded TCP 8001-8300).
 # The smoke token is read from .env.local; service.sh seeds it when the service
-# starts. Override the endpoint host with SMOKE_HOST if needed.
+# starts. In CI the token comes from the SMOKE_TOKEN secret. Override the local
+# endpoint host with SMOKE_HOST if needed.
 set -uo pipefail
 
 REPO_ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -32,12 +37,19 @@ load_env() {
   done
 }
 
-load_env
-PORT="${RELEASE_PORT:-8787}"
-HOST="${SMOKE_HOST:-127.0.0.1}"
-BASE="http://$HOST:$PORT"
-CURRENT_LINK="$REPO_ROOT/current"
-CURRENT_POINTER="$REPO_ROOT/current.txt"
+if [ -n "${1:-}" ]; then
+  # The deploy job passes the public URL. No local release pointer exists there,
+  # so the header names the host instead of a release directory. Do not load
+  # .env.local: its token belongs to the local service, not the hosted one.
+  BASE="${1%/}"
+  RELEASE_LABEL="remote"
+else
+  load_env
+  PORT="${RELEASE_PORT:-8787}"
+  HOST="${SMOKE_HOST:-127.0.0.1}"
+  BASE="http://$HOST:$PORT"
+  RELEASE_LABEL="$(cat "$REPO_ROOT/current" 2>/dev/null || cat "$REPO_ROOT/current.txt" 2>/dev/null || echo unknown)"
+fi
 TMP_DIR="$REPO_ROOT/.deploy"
 mkdir -p "$TMP_DIR"
 # Repo-relative: Windows Node misreads MSYS absolute paths (/p/... -> P:\p\...).
@@ -88,7 +100,7 @@ process.stdout.write(text.slice(0, 160));
 ' "$1" 2>/dev/null
 }
 
-echo "smoke: $BASE (release $(cat "$CURRENT_LINK" 2>/dev/null || cat "$CURRENT_POINTER" 2>/dev/null || echo unknown))"
+echo "smoke: $BASE (release $RELEASE_LABEL)"
 
 # 1. /health
 code=$(http_code "$BASE/health")
@@ -147,7 +159,15 @@ else
   fail "4/5 GET /invoices/<random-uuid> 404 not_found, no stack" "status=$code body=$(body_summary "$BODY")"
 fi
 
-# 5. p95 < 300 ms over 5 warm samples after one warm-up
+# 5. p95 < 300 ms over 5 warm samples after one warm-up.
+# The local budget is 300 ms. A public URL is measured across the internet, and
+# a fresh TLS connection per sample adds the round trip; the hosted budget is
+# 1000 ms so the assertion still fails a service that stops answering promptly,
+# without failing on distance. The budget is printed, never silently dropped.
+LATENCY_BUDGET_MS=300
+if [ "$RELEASE_LABEL" = "remote" ]; then
+  LATENCY_BUDGET_MS=1000
+fi
 latency_out="$TMP_DIR/.latency.$$"
 curl -s -o "$latency_out" "$BASE/ready" 2>/dev/null
 samples=""
@@ -168,13 +188,13 @@ const values = process.argv.slice(1).map(Number).sort((a, b) => a - b);
 process.stdout.write(String(values[Math.ceil(0.95 * values.length) - 1]));
 ' $samples)
   p95_ms=$(node -e 'process.stdout.write((Number(process.argv[1]) * 1000).toFixed(1))' "$p95")
-  if node -e 'process.exit(Number(process.argv[1]) < 0.3 ? 0 : 1)' "$p95"; then
-    pass "5/5 /ready p95 ${p95_ms}ms < 300ms (5 warm samples)"
+  if node -e 'process.exit(Number(process.argv[1]) * 1000 < Number(process.argv[2]) ? 0 : 1)' "$p95" "$LATENCY_BUDGET_MS"; then
+    pass "5/5 /ready p95 ${p95_ms}ms < ${LATENCY_BUDGET_MS}ms (5 warm samples)"
   else
-    fail "5/5 /ready p95 < 300ms" "p95=${p95_ms}ms"
+    fail "5/5 /ready p95 < ${LATENCY_BUDGET_MS}ms" "p95=${p95_ms}ms"
   fi
 else
-  fail "5/5 /ready p95 < 300ms" "latency sample failed"
+  fail "5/5 /ready p95 < ${LATENCY_BUDGET_MS}ms" "latency sample failed"
 fi
 
 if [ "$FAILURES" -gt 0 ]; then

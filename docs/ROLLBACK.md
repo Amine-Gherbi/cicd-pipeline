@@ -2,10 +2,12 @@
 
 Two lanes, never conflated:
 
-- **CI lane** — build → Trivy → attest → push to GHCR (GitHub Actions only; this
-  host has no Docker daemon).
+- **CI lane** — gates → `publish` (GHCR push + keyless cosign) → `deploy`
+  (Render), on GitHub Actions and only on `master`. See `docs/PIPELINE.md`.
 - **Local lane** — `scripts/release-local.sh`: build → swap → wait → smoke →
-  rollback. This is the only place a deploy actually happens.
+  rollback. This is the lane whose rollback is proved step by step here; the
+  hosted lane re-runs the same smoke assertions but does not implement a
+  pointer swap or a local rollback.
 
 The local lane is recorded here because a deploy you cannot roll back is not a
 deploy. The order of lines in `deploy.log` is the evidence, not a screenshot.

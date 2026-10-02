@@ -4,8 +4,8 @@ Two status values are used, and they are not interchangeable:
 
 - **verified locally** — the command ran on this machine and the stated output
   is real. It says nothing about GitHub Actions.
-- **unverified** — the command has never run here, because it needs a remote
-  and/or the Docker daemon. No output is claimed.
+- **unverified** — the command has not produced the stated output here or in a
+  recorded run. The row names what is missing. No output is claimed.
 
 Environment facts behind the unverified column, as originally written: there was
 no git remote, so no Actions run, PR or registry artifact existed. That changed
@@ -61,11 +61,42 @@ Local proof of the fixed lane, measured 2026-10-29 on this machine (Docker
 `.github/workflows/pr.yml` and documentation, not the Dockerfile or application
 code, so the image is the one the `image` and `publish` jobs build.
 
-The supervisor merges the branch and dispatches `pr.yml` on `master`. The first
-green run and its digest are placeholders until observed:
+The supervisor merged the branch and the workflow ran on `master`; run
+40905865091 is fully green and its `publish` job produced this digest:
 
 - Green run URL: `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`
 - Pushed digest: `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`
+
+## Hosted lane — Neon and Render (2026-10-29)
+
+The service now has a real target. These rows were measured on this machine
+before the `deploy` job could run in Actions; the job itself is unexecuted until
+the branch is merged and a master run starts.
+
+| Claim | Command | Observed |
+|---|---|---|
+| the Neon `invoice` database exists and is owned by the same role as `neondb` | `psql ... -c "select datname, pg_get_userbyid(datdba) from pg_database where datname in ('invoice','neondb','docqa')"` | `docqa\|neondb_owner`, `invoice\|neondb_owner`, `neondb\|neondb_owner`; exit 0. `CREATE DATABASE invoice` ran once; `neondb` and `docqa` were not modified. |
+| the schema was migrated on Neon | `DATABASE_URL="$INVOICE_URL" PGOPTIONS='-c lock_timeout=3s -c statement_timeout=30s' npx prisma migrate deploy` | exit 0: `Applying migration 20261022234607_init`, `All migrations have been successfully applied.` |
+| the migrated tables exist | `psql ... -c "select table_name from information_schema.tables where table_schema='public' order by table_name"` | `_prisma_migrations`, `invoices`; exit 0 |
+| the migration row is finished | `psql ... -c "select migration_name \|\| '\|' \|\| (finished_at is not null) from _prisma_migrations"` | `20261022234607_init\|true` |
+| the Render service exists with the requested shape | `GET /v1/services/srv-dbhni75g1s2s73ahheig` | `201` created: id `srv-dbhni75g1s2s73ahheig`, name `invoice-api`, type `web_service`, repo `Amine-Gherbi/cicd-pipeline`, branch `master`, `autoDeploy: no`, Docker, `free`, `frankfurt`, health check `/health`, dockerfile `./Dockerfile` |
+| the service URL | service create response | <https://invoice-api-26b4.onrender.com> (Render assigned the `-26b4` suffix; the bare name was unavailable) |
+| a deploy of the tracked commit is live | `GET /v1/services/srv-dbhni75g1s2s73ahheig/deploys/dep-dbhnjfg8v5cc738v0mq0` | `status: live`, commit `f6c4355f2a6e7e01a884b2a599002f9b570b42a1`, started `16:52:14Z`, finished `16:52:51Z` |
+| the public service answers | `curl /health`, `curl /ready` | `/health` 200 `{"status":"ok"}`; `/ready` 200 `{"status":"ok","checks":{"database":"ok","migrations":"ok"}}` |
+| the five smoke assertions pass against the public URL | `SMOKE_TOKEN=… bash scripts/smoke.sh https://invoice-api-26b4.onrender.com` | `5 of 5 assertions`, exit 0; `/ready` p95 `382.8 ms < 1000 ms` (the public-URL budget; local stays 300 ms) |
+| the `deploy` job is master-only and bounded | `npx --yes js-yaml .github/workflows/pr.yml` plus a structural read | job exists; `if: github.ref == 'refs/heads/master'`; `needs: [ci-ok, publish]`; deploy poll deadline 600 s; `/health` poll deadline 360 s; no `continue-on-error` |
+| the trigger secret names exist | `gh secret list --repo Amine-Gherbi/cicd-pipeline` | `RENDER_API_KEY` and `SMOKE_TOKEN`; names only, no value printed or committed |
+| a deploy hook could not be created through the API | `GET /v1/services/srv-dbhni75g1s2s73ahheig/deploy-hooks` | `404 page not found`; the job therefore uses `RENDER_API_KEY` and calls `POST /deploys` with `commitId` |
+
+The schema-migration step is deliberately outside the container: the runtime
+image does not install the Prisma CLI (that omission is what keeps Trivy at zero
+HIGH/CRITICAL), and the Render free plan has no pre-deploy command. Migrations
+are applied to Neon from this machine before the deploy; `/ready` fails with
+`pending_migrations` if the image and the database disagree, and smoke assertion
+2 fails on that, so a service with missing tables cannot pass the gate.
+
+Not yet observed: the `deploy` job inside Actions. It becomes observable only
+after this branch is merged and a master run starts. `TODO_SUPERVISOR`.
 
 ## Verified locally
 
@@ -333,32 +364,34 @@ Rows appended for the documentation/output card. The tables above are unchanged.
 
 ## Unverified — needs a remote and/or Actions
 
-These rows were written before the remote existed and are retained as the
-original record. Run 40902199280 (above) now answers the “workflow runs at all”
-and “image builds on the runner” rows; the green-run, PR, attestation and
-registry rows remain unverified until the supervisor's dispatch.
+These rows began before the remote existed. Runs 40902199280 and 40905865091
+now answer the “workflow runs”, “image builds on the runner” and “green master”
+rows. The ruleset, red-PR and attestation rows still need a settings check or a
+run that has not happened.
 
 | Claim | Command that would prove it on a machine with a remote | Status |
 |---|---|---|
 | the workflow runs at all | `gh workflow list`, then `gh run list --workflow=pr.yml` | `verified` — run 40902199280 executed on `master` |
-| all eight jobs go green on a clean PR | `gh run view <run-id> --log` | `unverified` — the first run had seven green and `trivy` red; green run `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091` |
+| all eight gates go green | `gh run view <run-id> --log` | `verified` on `master` — run 40905865091; a clean PR run is still unobserved |
 | `ci-ok` is the check the ruleset requires | `gh api repos/{owner}/{repo}/branches/main/protection` (or the ruleset page) | `unverified` |
 | a red PR cannot merge | `gh pr checks <n>` shows `ci-ok` failing, `gh pr view <n> --json mergeStateStatus` shows `BLOCKED` | `unverified` |
 | the red PR fails in the expected job | `gh pr checks <n>`; expected failing job is `trivy` (see below) | `unverified` |
-| the image builds on the runner | `gh run view <run-id> --log --job=image` | `verified` — `image` succeeded in run 40902199280 |
-| Trivy scans the loaded image and uploads SARIF | `gh run view <run-id> --log --job=trivy`; `gh api repos/{owner}/{repo}/code-scanning/alerts` | `unverified` |
+| the image builds on the runner | `gh run view <run-id> --log --job=image` | `verified` — `image` succeeded in run 40902199280 and 40905865091 |
+| Trivy scans the loaded image and keeps its report | `gh run view <run-id> --log --job=trivy` | `verified` scan on `master`; code scanning is disabled, so the SARIF is kept as the run artifact instead of uploaded |
 | BuildKit cache actually helps | `grep -c CACHED build.log`; `gh api repos/{owner}/{repo}/actions/caches` | `unverified` |
 | the image meets the size target | `docker buildx imagetools inspect ghcr.io/{owner}/invoice-api:<tag>` | `unverified` |
-| migration-gate behaves the same in the service container | `gh run view <run-id> --log --job=migration-gate` | `unverified` |
+| migration-gate behaves the same in the service container | `gh run view <run-id> --log --job=migration-gate` | `verified` — the job is green in run 40905865091 |
 | gitleaks blocks a committed secret | a second draft PR with a canary token; `gh pr checks <n>` | `unverified` |
-| image provenance verifies | `gh attestation verify oci://ghcr.io/{owner}/invoice-api@sha256:<digest> --repo {owner}/invoice-api` | `unverified` |
-| keyless signature verifies | `cosign verify ghcr.io/{owner}/invoice-api@sha256:<digest>` | `unverified` |
+| image provenance verifies | `gh attestation verify oci://ghcr.io/{owner}/invoice-api@sha256:<digest> --repo {owner}/invoice-api` | `unverified` — no attestation artifact is produced |
+| keyless signature verifies | `cosign verify ghcr.io/{owner}/invoice-api@sha256:<digest>` | `verified in the publish job` — run 40905865091 published and verified digest `sha256:e45898df…b31da` |
+| the hosted `deploy` job goes green on `master` | `gh run view <run-id> --log --job=deploy`; run summary shows the deploy id and public URL | `unverified` — the job exists and parses; it first runs after this branch is merged |
 
 The attestation and signature rows are about `invoice-api` only. This
 repository does not verify or ship the P2 storefront image: that image was
-rebuilt independently and is not an input to this pipeline. There is also no
-`release.yml` and no registry push here, so no attestation exists to verify for
-either project.
+rebuilt independently and is not an input to this pipeline. There is no
+`release.yml`; the registry push and keyless signature live in the `publish`
+job. No attestation artifact is produced, so the provenance row stays
+unverified.
 
 ## The red PR — exact body, still unexecuted
 
@@ -409,19 +442,22 @@ reads as a test. Here there is no run link, so the body says so.
 ## What the pre-remote state ruled out
 
 Before 2026-10-29 there was no remote, so no Actions run, PR, GHCR push, OIDC
-token, attestation or `cosign verify` output could exist. Run 40902199280 now
-answers the first bullet; the others remain true of the current state:
+token or signature could exist. That is history now: runs 40902199280 and
+40905865091 executed, and the second published digest
+`sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da` and
+verified its keyless signature in the `publish` job. These limits remain:
 
-- Actions ran, but `trivy` failed on a missing artifact and `publish` was
-  skipped, so no green check or pushed digest exists yet. Green run
-  `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`; digest `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`.
 - No PR has been opened, so there is no `gh pr checks` output and no red check
   page. A screenshot would be a mock-up.
-- No GHCR push and no OIDC token have completed, so no attestation and no
-  `cosign verify` output exist.
+- No attestation artifact is produced, so `gh attestation verify` has nothing
+  to read. The signature is produced and verified; provenance is not.
+- The hosted `deploy` job has not run inside Actions yet. The target, schema,
+  deploy id and public smoke are verified above; the job's first master run is
+  the supervisor's confirmation.
 - The Docker daemon was unavailable when this section was first written; it
   came up on 2026-10-23 and the local image build and Trivy run above are the
   result.
 
-The locally verified tables and run 40902199280 are the complete set of claims
-this repository supports. Everything else is marked `unverified` on purpose.
+The locally verified tables, the hosted-lane table and the recorded runs are
+the complete set of claims this repository supports. Everything else is marked
+`unverified` on purpose.

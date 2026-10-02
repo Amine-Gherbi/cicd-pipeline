@@ -2,7 +2,7 @@ name: pr
 
 # The only required status check is the literal string `ci-ok` (see the ruleset).
 # Every gate job feeds that aggregator; a matrix suffix must never be a required
-# check. `publish` is downstream of `ci-ok`, not part of it.
+# check. `publish` and `deploy` are downstream of `ci-ok`, not part of it.
 #
 # The same eight gates run on pull_request and on push to the default branch
 # (`master`). A branch that has never been merged has never run them.
@@ -372,3 +372,156 @@ jobs:
           name: image-digest.txt
           path: image-digest.txt
           if-no-files-found: error
+
+  deploy:
+    name: deploy
+    # Master only. `needs: [ci-ok, publish]` means the deploy waits for the
+    # signed image of the same commit, so the digest and the deploy describe
+    # one commit. A pull request never reaches this job: its ref is refs/pull/N.
+    if: github.ref == 'refs/heads/master'
+    needs: [ci-ok, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      RENDER_SERVICE_ID: srv-dbhni75g1s2s73ahheig
+      PUBLIC_URL: https://invoice-api-26b4.onrender.com
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Refuse to deploy anything but master
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/master" ]; then
+            echo "::error::deploy may only run on refs/heads/master (got $GITHUB_REF)"
+            exit 1
+          fi
+          head=$(git rev-parse HEAD)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "::error::checked out $head but this run is for $GITHUB_SHA"
+            exit 1
+          fi
+          echo "deploying master commit $GITHUB_SHA"
+
+      - name: Trigger the Render deploy for this commit
+        id: render
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          COMMIT_SHA: ${{ github.sha }}
+        # Render's API has no deploy-hook creation endpoint (probed 2026-10-29:
+        # /deploy-hooks answers 404), so this job uses the API key instead. That
+        # key can administer every service in the workspace; it is documented in
+        # docs/PIPELINE.md as the wider permission this choice costs.
+        run: |
+          set -euo pipefail
+          if [ -z "${RENDER_API_KEY:-}" ]; then
+            echo "::error::RENDER_API_KEY is not set"
+            exit 1
+          fi
+          body=$(node -e 'process.stdout.write(JSON.stringify({commitId: process.argv[1]}))' "$COMMIT_SHA")
+          response=$(curl -sS --fail-with-body --connect-timeout 10 --max-time 30 -X POST \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H 'Content-Type: application/json' \
+            -H 'Accept: application/json' \
+            --data "$body" \
+            "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys")
+          deploy_id=$(printf '%s' "$response" | node -e '
+          let d = "";
+          process.stdin.on("data", (c) => (d += c)).on("end", () => {
+            const parsed = JSON.parse(d);
+            const deploy = parsed.deploy ?? parsed;
+            process.stdout.write(String(deploy.id ?? ""));
+          });
+          ')
+          if [ -z "$deploy_id" ]; then
+            echo "::error::Render did not return a deploy id"
+            exit 1
+          fi
+          echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+          echo "triggered Render deploy $deploy_id for $COMMIT_SHA"
+
+      - name: Wait for the Render deploy to finish (bounded 10 min)
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          DEPLOY_ID: ${{ steps.render.outputs.deploy_id }}
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 600))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            response=$(curl -sS --fail-with-body --connect-timeout 10 --max-time 30 \
+              -H "Authorization: Bearer $RENDER_API_KEY" \
+              -H 'Accept: application/json' \
+              "https://api.render.com/v1/services/${RENDER_SERVICE_ID}/deploys/${DEPLOY_ID}")
+            status=$(printf '%s' "$response" | node -e '
+            let d = "";
+            process.stdin.on("data", (c) => (d += c)).on("end", () => {
+              const parsed = JSON.parse(d);
+              const deploy = parsed.deploy ?? parsed;
+              process.stdout.write(String(deploy.status ?? "unknown"));
+            });
+            ')
+            echo "deploy $DEPLOY_ID: $status"
+            case "$status" in
+              live)
+                echo "deploy $DEPLOY_ID is live"
+                exit 0
+                ;;
+              deactivated|canceled|build_failed|update_failed|pre_deploy_failed)
+                echo "::error::deploy $DEPLOY_ID ended in $status"
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::error::deploy $DEPLOY_ID did not reach live within 600s"
+          exit 1
+
+      - name: Wait for the public /health to answer 200 (bounded 6 min)
+        # A free instance cold-starts in about a minute. The Render deploy can be
+        # live before the instance is warm, so this waits separately.
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 360))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            code=000
+            if out=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "$PUBLIC_URL/health" 2>/dev/null); then
+              code=$out
+            fi
+            echo "$PUBLIC_URL/health -> $code"
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$PUBLIC_URL/health did not answer 200 within 360s"
+          exit 1
+
+      - name: Run the five smoke assertions against the public URL
+        env:
+          SMOKE_TOKEN: ${{ secrets.SMOKE_TOKEN }}
+        run: |
+          set -euo pipefail
+          bash scripts/smoke.sh "$PUBLIC_URL" | tee smoke-public.txt
+
+      - name: Record the deploy in the run summary
+        # Runs even when smoke failed: the run URL, deploy id and public URL are
+        # what a reader needs to investigate. The failing step still fails the job.
+        if: always()
+        env:
+          DEPLOY_ID: ${{ steps.render.outputs.deploy_id }}
+        run: |
+          {
+            echo "### Deploy"
+            echo ""
+            echo "- Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- Deploy id: ${DEPLOY_ID:-not triggered}"
+            echo "- Commit: ${GITHUB_SHA}"
+            echo "- Public URL: ${PUBLIC_URL}/health"
+            if [ -f smoke-public.txt ]; then
+              echo ""
+              echo '```text'
+              cat smoke-public.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

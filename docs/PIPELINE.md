@@ -1,9 +1,9 @@
 # Pipeline — the PR gate set
 
 This document describes `.github/workflows/pr.yml`: the gates a pull request
-must pass before it can merge. It is deliberately narrower than the whole
-delivery story — the release lane (tag → image → attest → push) is not present
-in this repository and is not claimed here.
+must pass before it can merge, and the two jobs that run only after them on
+`master` — `publish` (GHCR + cosign) and `deploy` (Render). The PR lane stops at
+`ci-ok`; a pull request never reaches either downstream job.
 
 ## One required check: `ci-ok`
 
@@ -15,7 +15,7 @@ check. The ruleset requires exactly one string: **`ci-ok`**.
 lint ─────────────┐
 typecheck ────────┤
 test ─────────────┤
-image ──▶ trivy ──┼──▶ ci-ok   (if: always(), needs: [all eight])
+image ──▶ trivy ──┼──▶ ci-ok ──▶ publish ──▶ deploy   (master only)
 gitleaks ─────────┤
 migration-gate ───┤
 bundle-size ──────┘
@@ -119,14 +119,16 @@ results, nothing else.
 
 ## Two lanes, never conflated
 
-- **CI lane:** build → scan → attest → push. This document covers only its PR
-  half (build + scan). Attestation and GHCR are the release lane.
+- **CI lane:** gates → `publish` (GHCR image, keyless cosign sign + verify) →
+  `deploy` (Render). The gate half runs on every PR; `publish` and `deploy` run
+  only on `master`, after `ci-ok`.
 - **Local lane:** `scripts/release-local.sh` → swap → wait for health → smoke →
   rollback, with `deploy.log` as evidence.
 
-The CI lane cannot deploy: the runner cannot reach this machine, and there is
-no paid staging host (decision recorded 2026-10-22). Neither lane stands in for
-the other.
+The hosted deploy lane does not stand in for the local one, and vice versa: the
+runner still cannot reach this machine, so the local lane remains the proof of
+the swap/wait/smoke/rollback state machine. The Render lane proves the same
+five smoke assertions against a public URL.
 
 ## What this repository ships
 
@@ -139,8 +141,11 @@ there is no artifact path from P2 into this repository:
 - The `image` and `trivy` jobs inspect that image only.
 - `release-local.sh` builds and swaps `invoice-api` from this repository; it
   never fetches or runs the storefront.
-- There is no `release.yml`, no registry push and no OIDC token here, so no
-  attestation exists for either project to verify.
+- On `master`, `publish` pushes the image to
+  `ghcr.io/amine-gherbi/invoice-api` and signs the pushed digest keyless with
+  cosign. There is no `release.yml`; the release steps live in `pr.yml`.
+- `deploy` asks Render to build the same commit and then smokes the public
+  service. It does not consume the GHCR image.
 
 The local lane still records the full commit SHA in
 `.releases/<sha>/manifest.json`; a digest is never replaced by a tag, because a
@@ -158,13 +163,63 @@ understands.
 |---|---|---|---|---|
 | lint / type / unit | tsc + eslint | tsc + eslint + vitest | **tsc + eslint + vitest** | ruff + mypy + pytest |
 | trivy fs + gitleaks | yes | yes | **yes** | yes |
-| image build + scan | no | yes (P2 builds its own image) | **yes (`invoice-api`; build and Trivy measured 2026-10-23, attestation only in Actions)** | yes |
+| image build + scan | no | yes (P2 builds its own image) | **yes (`invoice-api`; build + Trivy measured 2026-10-23; pushed and signed in Actions)** | yes |
 | migration gate | no | Prisma | **Prisma + lock timeout + drift + destructive check** | Alembic |
 | smoke | preview URL | preview deploy | **local release lane, 5 assertions** | eval report |
-| release | static deploy | static deploy + image | **local swap (measured) + GHCR/tag (path only, unexecuted)** | GHCR + eval artifact |
+| release | static deploy | static deploy + image | **GHCR push + keyless cosign (run 40905865091); Render deploy on master** | GHCR + eval artifact |
 
 The one string that must match repository settings is `ci-ok` in every project
 that uses this shape. Nothing else is required by the ruleset.
+
+## Hosted deploy lane (master only)
+
+`deploy` is a job in `pr.yml`, not a separate workflow. It has
+`needs: [ci-ok, publish]` and `if: github.ref == 'refs/heads/master'`, so a pull
+request cannot reach it and it cannot deploy a branch other than `master`.
+
+- **Target:** Render service `invoice-api`
+  (`srv-dbhni75g1s2s73ahheig`), Docker, free plan, region `frankfurt`, health
+  check `/health`, `autoDeploy: no`.
+- **Public URL:** <https://invoice-api-26b4.onrender.com>. Render assigned the
+  `-26b4` suffix; the bare `invoice-api.onrender.com` name was not available.
+- **Database:** Neon project `ep-autumn-glitter-b9vtz0q5`, database `invoice`,
+  owned by `neondb_owner`. The existing `neondb` and `docqa` databases were not
+  touched.
+- **Schema:** `prisma migrate deploy` was run from this machine against the Neon
+  `invoice` database before the first deploy. The runtime image does not carry
+  the Prisma CLI — it is omitted deliberately so the Trivy gate stays at zero
+  HIGH/CRITICAL — and the Render free plan has no pre-deploy command, so the
+  container does not migrate itself. This is the exact place migrations happen:
+  an operator runs the command below against Neon before deploying a commit that
+  adds one. The gate that makes this safe is `/ready`: it compares applied
+  migrations with the `prisma/migrations` directory in the image and returns 503
+  `pending_migrations` when they disagree. Smoke assertion 2 fails on that, so a
+  service answering `/health` with missing tables is not accepted as deployed.
+- **Trigger:** Render's API has no deploy-hook creation endpoint (probed
+  2026-10-29: `/deploy-hooks` → 404), so the job stores `RENDER_API_KEY` and
+  calls `POST /v1/services/{id}/deploys` with `commitId`. That key is
+  workspace-wide and can administer every service — a wider permission than a
+  deploy hook. A dashboard-created hook remains the narrower option, but this
+  API cannot create one.
+- **Secrets:** `RENDER_API_KEY` and `SMOKE_TOKEN`. The hosted service requires
+  the bearer token for `POST /invoices`; assertion 3 proves 401 without it and
+  201 with it. Both values were set with `gh secret set`; neither appears in a
+  file, a log or a commit.
+- **Waits:** the deploy status is polled until `live` or a failure state with a
+  600 s deadline; `/health` is polled every 5 s with a 360 s deadline. A free
+  instance cold-starts in about 60 s; every wait is bounded.
+- **Smoke:** `bash scripts/smoke.sh "$PUBLIC_URL"` runs the same five
+  assertions and fails the job. The latency assertion keeps the 300 ms local
+  budget and uses 1000 ms for a public URL, because each sample opens a fresh TLS
+  connection across the internet; the budget used is printed in the line.
+- **Summary:** the job writes the run URL, deploy id, commit, public URL and the
+  smoke transcript to `$GITHUB_STEP_SUMMARY`.
+
+```bash
+# Before a deploy whose commit adds a migration:
+DATABASE_URL='postgresql://…/invoice?sslmode=require' \
+PGOPTIONS='-c lock_timeout=3s -c statement_timeout=30s' npx prisma migrate deploy
+```
 
 ## Execution status
 
@@ -186,7 +241,18 @@ Locally on 2026-10-29: `bash scripts/verify.sh` exit 0 (9/9 tests);
 --severity CRITICAL,HIGH --ignore-unfixed invoice-api:$SHA` exit 0 with 0
 CRITICAL and 0 HIGH across 2 targets. Commands and output: `docs/EVIDENCE.md`.
 
-Not executed yet: a red PR (none has been opened), a GHCR push and keyless
-signature (`publish` was skipped in 40902199280), and the Render deploy lane
-(W3-b2/W3-c). The image was built and scanned locally; attestation remains a
-path, not a measurement.
+Hosted target measured on 2026-10-29 (before the `deploy` job could run in
+Actions): the Neon `invoice` database has `_prisma_migrations` and `invoices`;
+Render service `srv-dbhni75g1s2s73ahheig` is live at
+<https://invoice-api-26b4.onrender.com>; the latest deploy
+`dep-dbhnjfg8v5cc738v0mq0` is `live` for commit
+`f6c4355f2a6e7e01a884b2a599002f9b570b42a1`; and `bash scripts/smoke.sh
+https://invoice-api-26b4.onrender.com` passed 5/5 from this machine.
+
+Not executed yet: the `deploy` job inside Actions (it exists and parses, but it
+runs only after this branch is merged and a master run starts), and a red PR
+(none has been opened). The GHCR push and keyless signature did run: run
+40905865091 published digest
+`sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`.
+There is still no `release.yml` and no attestation artifact; the supply-chain
+steps live in the `publish` job.
