@@ -225,6 +225,74 @@ DATABASE_URL='postgresql://…/invoice?sslmode=require' \
 PGOPTIONS='-c lock_timeout=3s -c statement_timeout=30s' npx prisma migrate deploy
 ```
 
+## The demo lane
+
+<https://pipeline-demo-57mh.onrender.com> is a one-screen Fastify service
+(`demo/`, plain ESM, no build step) that performs three real actions instead of
+describing them. Render service `srv-dbhofsbbc2fs73f0rg0g`, health `/health`.
+
+| Button | What the server does | What the page shows |
+|---|---|---|
+| **Run the gates** | `POST` a `workflow_dispatch` of `.github/workflows/demo.yml` with `action=gates`, then polls the run and its jobs every 4 s | Each gate job as it turns green or red, plus the run URL |
+| **Ship a bad image** | Dispatches `action=bad-image`, which builds from a pinned base digest and runs the same Trivy flags as `pr.yml` | A red `bad-image-trivy` job, the failing run URL, and the CVE lines read from the job log |
+| **Roll back** | Reads the Render deploy history for `invoice-api`, deploys the recorded faulty commit, waits for `/health`, runs the five smoke assertions, then asks Render to redeploy the previously live deploy and repeats health + smoke | The six-step timeline with both deploy ids, both commit SHAs and timestamps |
+
+`demo.yml` mirrors the eight gate names for the green path. It does not replace
+`pr.yml`: the required status check is still the literal `ci-ok` produced by
+`pr.yml`, and `demo.yml` has `permissions: {}` and `concurrency: pipeline-demo`.
+
+The bad-image path is a real scanner failure, not a scripted `exit 1`. The
+Dockerfile starts from
+`node:18.12.0-alpine@sha256:1f09c210a17508d34277971b19541a47a26dc5a641dedc03bd28cff095052996`
+and Trivy runs with `--exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed`.
+Rescanning that digest reports 10 HIGH in the Alpine target and 36 findings
+(35 HIGH, 1 CRITICAL) in the Node dependencies target, for example
+`libcrypto1.1 CVE-2022-4450 HIGH fixed 1.1.1q-r0 → 1.1.1t-r0`. The job fails
+because the scanner found those, and the findings are uploaded as the run's
+artifact.
+
+**Rollback is a redeploy.** There is no symlink and no label: the demo asks
+Render for the deploy currently `live` for `invoice-api`, deploys the recorded
+faulty commit by SHA, waits for the deploy to reach `live` and for
+`/health` to answer 200, then runs `bash scripts/smoke.sh
+https://invoice-api-26b4.onrender.com` verbatim. The faulty release answers
+`/health` and `/ready` normally but returns 500 from `POST /invoices`, so
+assertion 3 fails for a real reason. The demo then calls Render's rollback
+endpoint with the previously live deploy id, waits for `live` and `/health`,
+and re-runs the same five assertions. The order rendered on the page is
+`deploy.start → health.ok → smoke.fail → rollback.start → rollback.health.ok →
+rollback.smoke.ok`.
+
+`invoice-api` builds from the repository, so Render exposes deploy ids and the
+commits they built, not image digests. The page says so rather than inventing a
+digest. The recorded exercise used bad deploy `dep-dbhonnk9v7es73bg70f0`
+(commit `ffa0422df22d`) and rollback deploy `dep-dbhoo3rbc2fs73f1b85g`
+(commit `2690aa5fe104`).
+
+Guard rails, all server-side:
+
+- one action at a time; a second request answers `409` with the running id;
+- one dispatch per client address per 60 s; a second answers `429` with
+  `retry-after`;
+- rollback needs `confirm: true` and is disabled until Render reports a live
+  deploy *and* an earlier one;
+- every outbound call has a deadline (dispatch 20 s, run 20 min, deploy 20 min,
+  health 6 min, smoke 3 min);
+- when `GH_DISPATCH_TOKEN` is absent or GitHub rate-limits, `/api/runs` falls
+  back to a read-only list with the reason.
+
+The browser holds no credential. The page's HTML and JavaScript call only
+same-origin `/api/*`; `GH_DISPATCH_TOKEN` and `RENDER_API_KEY` are read by the
+server from its environment and never rendered. A served page contains no
+`github_pat_` or `Bearer` string. The target service id is read from
+`INVOICE_RENDER_SERVICE_ID`, not `RENDER_SERVICE_ID`: Render injects the latter
+into every service it runs, which would point the demo at itself.
+
+`workflow_dispatch` only works once `demo.yml` is on the default branch. Until
+this branch is merged the dispatch endpoint answers 404 and the page shows that
+failure with the reason instead of a spinner; the rollback button does not
+depend on the workflow and works before the merge.
+
 ## Execution status
 
 The repository has a remote (`origin` →
