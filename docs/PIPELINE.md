@@ -179,7 +179,8 @@ request cannot reach it and it cannot deploy a branch other than `master`.
 
 - **Target:** Render service `invoice-api`
   (`srv-dbhni75g1s2s73ahheig`), Docker, free plan, region `frankfurt`, health
-  check `/health`, `autoDeploy: no`.
+  check `/health`, `autoDeploy: no`. Render injects `PORT` at runtime; the
+  service reads it (`src/config.ts`), with the Dockerfile's 8080 as the default.
 - **Public URL:** <https://invoice-api-26b4.onrender.com>. Render assigned the
   `-26b4` suffix; the bare `invoice-api.onrender.com` name was not available.
 - **Database:** Neon project `ep-autumn-glitter-b9vtz0q5`, database `invoice`,
