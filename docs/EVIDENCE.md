@@ -7,16 +7,65 @@ Two status values are used, and they are not interchangeable:
 - **unverified** — the command has never run here, because it needs a remote
   and/or the Docker daemon. No output is claimed.
 
-Environment facts behind the unverified column: `git remote -v` is empty (no
-remote, no Actions, no PRs). The Docker engine was **down** when this file was
-first written (`docker info` → pipe access denied); on 2026-10-23 it came up
-(server 28.1.1, linux/amd64) and the local image build below was run for real.
-Local PostgreSQL 16.13 (`select version()`) listens on port 5433 and was
-reachable for the migration test below.
+Environment facts behind the unverified column, as originally written: there was
+no git remote, so no Actions run, PR or registry artifact existed. That changed
+on 2026-10-29: `origin` is
+`https://github.com/Amine-Gherbi/cicd-pipeline.git`, and the first real run
+executed (see “GitHub Actions — first execution” below). Rows the run now
+answers are marked there; the rest stay unverified. The Docker engine was
+**down** when this file was first written (`docker info` → pipe access denied);
+on 2026-10-23 it came up (server 28.1.1, linux/amd64) and the local image build
+below was run for real. Local PostgreSQL 16.13 (`select version()`) listens on
+port 5433 and was reachable for the migration test below.
 
 
 Fresh runs from 2026-10-23 are saved under `docs/evidence/`. `docs/PROOF.md`
 indexes every claim to its command; this file is the full observation log.
+
+## GitHub Actions — first execution and the green-lane fix (2026-10-29)
+
+`origin` is `https://github.com/Amine-Gherbi/cicd-pipeline.git`, so Actions
+executes. The merge of W3-a produced the first real run:
+
+- Run: <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40902199280>
+  (`push` to `master`, conclusion `failure`, 2m3s, started
+  2026-10-29T15:30:08Z).
+- Seven of eight gates succeeded. Job timing shows the bug: `trivy` started at
+  15:30:12Z and failed at 15:30:50Z, while `image` finished successfully at
+  15:32:04Z.
+- `trivy` failed with `Unable to download artifact(s): Artifact not found for
+  name: invoice-api-image`; the `if: always()` SARIF upload then failed with
+  `Path does not exist: trivy-results.sarif`. `ci-ok` failed; `publish` was
+  skipped.
+
+Root cause: `trivy` consumed the `invoice-api-image` artifact but did not
+declare `needs: [image]`, so both jobs started together. The failure was a
+dependency-graph bug, not a scanner finding. The fix adds the edge, keeps the
+scan step at `exit-code: '1'`, and guards the SARIF upload on
+`hashFiles('trivy-results.sarif') != ''`. Because code scanning is not enabled
+on this private repository (the API returns HTTP 403), the workflow also probes
+the code-scanning API and keeps the SARIF as the `trivy-results.sarif` run
+artifact when the upload target is unavailable. The scan step still fails the
+job on any CRITICAL or HIGH finding.
+
+Local proof of the fixed lane, measured 2026-10-29 on this machine (Docker
+28.1.1, Trivy 0.76.1, vulnerability DB updated 2026-10-29):
+
+| Claim | Command | Observed |
+|---|---|---|
+| the service still passes its own checks | `bash scripts/verify.sh` | `verify: ok`; `Test Files 1 passed (1)`, `Tests 9 passed (9)`; exit 0 |
+| the image builds from this Dockerfile | `docker build -t invoice-api:$SHA .` | exit 0; image `sha256:b9d3fbc0fddc…` (cache hit) |
+| the scan gate passes with its real flags | `trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed invoice-api:$SHA` | exit 0; 2 targets (alpine 3.24.3, Node.js); **0 CRITICAL, 0 HIGH** |
+
+`$SHA` was `7fa7aa595d7d1ab5d32cbf62784e65ba8cac5977`; this card changes only
+`.github/workflows/pr.yml` and documentation, not the Dockerfile or application
+code, so the image is the one the `image` and `publish` jobs build.
+
+The supervisor merges the branch and dispatches `pr.yml` on `master`. The first
+green run and its digest are placeholders until observed:
+
+- Green run URL: `RUN_URL_TBD`
+- Pushed digest: `DIGEST_TBD`
 
 ## Verified locally
 
@@ -35,7 +84,7 @@ Every other number in this table was measured earlier on 2026-10-23 and is
 | every `uses:` is a full 40-character commit SHA | `grep -oE "uses: [^ ]+" .github/workflows/pr.yml \| grep -Evc "@[0-9a-f]{40}$"` | `0` (20 `uses`; `grep -c` exits 1 when the count is zero) |
 | no `continue-on-error`, `\|\| true` or `@master` | `node -e "…readFileSync('.github/workflows/pr.yml')…"` | 0 occurrences of each |
 | trivy fails the gate | structural check of the trivy step | `exit-code: '1'`, `severity: 'CRITICAL,HIGH'`, `ignore-unfixed: true`, `cache-dir: ~/.cache/trivy` |
-| the image job loads the image | structural check of the build step | `load: true`; cache-to is `type=gha,scope=invoice-api,mode=${{ github.ref == 'refs/heads/main' && 'max' \|\| 'min' }}` |
+| the image job loads the image | structural check of the build step | `load: true`; cache-to is `type=gha,scope=invoice-api,mode=${{ github.ref == 'refs/heads/master' && 'max' \|\| 'min' }}` |
 | the destructive gate rejects an unlabelled DROP | `bash scripts/check-destructive.sh .deploy/tmp-check-2/bad` (fixture prepared locally) | exit 1: `drops or renames state but has no '-- destructive:' label` |
 | the destructive gate accepts a labelled DROP | `bash scripts/check-destructive.sh .deploy/tmp-check-2/good` | exit 0: `no unlabelled destructive statements` |
 | a comment that merely says “DROP” does not trip the gate | `bash scripts/check-destructive.sh .deploy/tmp-check-2/comment` | exit 0 |
@@ -284,17 +333,19 @@ Rows appended for the documentation/output card. The tables above are unchanged.
 
 ## Unverified — needs a remote and/or Actions
 
-Every row below is `unverified`. No run, check, PR, attestation or registry
-artifact exists for this repository.
+These rows were written before the remote existed and are retained as the
+original record. Run 40902199280 (above) now answers the “workflow runs at all”
+and “image builds on the runner” rows; the green-run, PR, attestation and
+registry rows remain unverified until the supervisor's dispatch.
 
 | Claim | Command that would prove it on a machine with a remote | Status |
 |---|---|---|
-| the workflow runs at all | `gh workflow list`, then `gh run list --workflow=pr.yml` | `unverified` |
-| all eight jobs go green on a clean PR | `gh run view <run-id> --log` | `unverified` |
+| the workflow runs at all | `gh workflow list`, then `gh run list --workflow=pr.yml` | `verified` — run 40902199280 executed on `master` |
+| all eight jobs go green on a clean PR | `gh run view <run-id> --log` | `unverified` — the first run had seven green and `trivy` red; green run `RUN_URL_TBD` |
 | `ci-ok` is the check the ruleset requires | `gh api repos/{owner}/{repo}/branches/main/protection` (or the ruleset page) | `unverified` |
 | a red PR cannot merge | `gh pr checks <n>` shows `ci-ok` failing, `gh pr view <n> --json mergeStateStatus` shows `BLOCKED` | `unverified` |
 | the red PR fails in the expected job | `gh pr checks <n>`; expected failing job is `trivy` (see below) | `unverified` |
-| the image builds on the runner | `gh run view <run-id> --log --job=image` | `unverified` |
+| the image builds on the runner | `gh run view <run-id> --log --job=image` | `verified` — `image` succeeded in run 40902199280 |
 | Trivy scans the loaded image and uploads SARIF | `gh run view <run-id> --log --job=trivy`; `gh api repos/{owner}/{repo}/code-scanning/alerts` | `unverified` |
 | BuildKit cache actually helps | `grep -c CACHED build.log`; `gh api repos/{owner}/{repo}/actions/caches` | `unverified` |
 | the image meets the size target | `docker buildx imagetools inspect ghcr.io/{owner}/invoice-api:<tag>` | `unverified` |
@@ -309,16 +360,15 @@ rebuilt independently and is not an input to this pipeline. There is also no
 `release.yml` and no registry push here, so no attestation exists to verify for
 either project.
 
-## The red PR — exact body, unexecuted
+## The red PR — exact body, still unexecuted
 
-The demonstration cannot exist without a remote: a pull request needs a
-repository to live in, and `gh pr create` has no target here. What would be
-opened — and what it must prove — is fixed below.
+A remote now exists, but no red PR has been opened: the first run came from the
+merge push. What would be opened — and what it must prove — is fixed below.
 
 ```text
 Title:  [DEMO] expected failure — trivy image (CVE-2021-23337)
 State:  draft
-Base:   main
+Base:   master
 Branch: demo/trivy-cve-2021-23337
 Change: add lodash@4.17.20 to dependencies and import it once in src/app.ts
 
@@ -336,8 +386,8 @@ Expected passing jobs: lint, typecheck, test, image, gitleaks,
 Expected check: ci-ok — failure
 Expected merge state: BLOCKED
 
-Run link: none. This repository has no remote, so the workflow has never
-run and no run URL can exist. Recorded as unverified in docs/EVIDENCE.md.
+Run link: none yet. This draft has not been opened; the only run so far is the
+green-lane run, not a red PR. Recorded as unverified in docs/EVIDENCE.md.
 ```
 
 Commands that would produce the evidence on a machine with a remote:
@@ -356,17 +406,22 @@ Status: `unverified`. The draft is intentional: a failing PR left open without
 a reason reads as neglect; a draft with an expected-failure body and a run link
 reads as a test. Here there is no run link, so the body says so.
 
-## What “no remote” rules out
+## What the pre-remote state ruled out
 
-- No Actions run, so no `gh run view` output, no `CACHED` counts, no cache
-  statistics. A number would be invented.
-- No PR, so no `gh pr checks` output and no red check page. A screenshot would
-  be a mock-up.
-- No GHCR push and no OIDC token, so no attestation and no `cosign verify`
-  output.
+Before 2026-10-29 there was no remote, so no Actions run, PR, GHCR push, OIDC
+token, attestation or `cosign verify` output could exist. Run 40902199280 now
+answers the first bullet; the others remain true of the current state:
+
+- Actions ran, but `trivy` failed on a missing artifact and `publish` was
+  skipped, so no green check or pushed digest exists yet. Green run
+  `RUN_URL_TBD`; digest `DIGEST_TBD`.
+- No PR has been opened, so there is no `gh pr checks` output and no red check
+  page. A screenshot would be a mock-up.
+- No GHCR push and no OIDC token have completed, so no attestation and no
+  `cosign verify` output exist.
 - The Docker daemon was unavailable when this section was first written; it
   came up on 2026-10-23 and the local image build and Trivy run above are the
-  result. Rows that need a remote or registry remain `unverified`.
+  result.
 
-The locally verified table above is the complete set of claims this machine can
-support. Everything else is marked `unverified` on purpose.
+The locally verified tables and run 40902199280 are the complete set of claims
+this repository supports. Everything else is marked `unverified` on purpose.

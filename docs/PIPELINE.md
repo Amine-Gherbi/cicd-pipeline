@@ -7,18 +7,18 @@ in this repository and is not claimed here.
 
 ## One required check: `ci-ok`
 
-Eight jobs run in parallel. None of them is a required status check. The ruleset
-requires exactly one string: **`ci-ok`**.
+Seven gate jobs start in parallel. `trivy` is the exception: it consumes the
+image artifact, so it waits for `image`. None of them is a required status
+check. The ruleset requires exactly one string: **`ci-ok`**.
 
 ```text
-lint ─┐
-typecheck ─┤
-test ─┤
-image ─┤
-trivy ─┼──▶ ci-ok   (if: always(), needs: [all eight])
-gitleaks ─┤
-migration-gate ─┤
-bundle-size ─┘
+lint ─────────────┐
+typecheck ────────┤
+test ─────────────┤
+image ──▶ trivy ──┼──▶ ci-ok   (if: always(), needs: [all eight])
+gitleaks ─────────┤
+migration-gate ───┤
+bundle-size ──────┘
 ```
 
 Why an aggregator instead of eight required checks:
@@ -58,9 +58,22 @@ results, nothing else.
 - **The image must be loaded.** `docker/build-push-action` with `load: true`,
   then `docker save` / `docker load` for the `trivy` job. Without it the image
   exists only in the Buildx cache and `trivy image` has nothing local to scan.
+- **The scan depends on the build.** `trivy` declares `needs: [image]` because
+  it downloads the `invoice-api-image` artifact that `image` uploads. Without
+  the edge both jobs start together, `download-artifact` runs before the upload
+  exists, and the gate dies with `Artifact not found` (run 40902199280).
+  Declaring the dependency is the fix; `continue-on-error` or a retry would only
+  mask it.
+- **The SARIF upload must not create a second failure.** It runs
+  `if: always() && hashFiles('trivy-results.sarif') != ''`, so a scan that
+  crashed before writing a report does not add “Path does not exist” on top of
+  the real failure. The scan step keeps `exit-code: '1'` and still fails the
+  job. This private repository has code scanning disabled, so the workflow
+  probes the code-scanning API and keeps the SARIF as a run artifact instead of
+  letting `upload-sarif` fail with “Code scanning is not enabled”.
 - **Cache modes differ by branch.** `cache-from: type=gha,scope=invoice-api`
-  and `cache-to` with `mode=max` only when `github.ref` is `refs/heads/main`;
-  `mode=min` otherwise. PR refs cannot seed main's cache, and `mode=max` on
+  and `cache-to` with `mode=max` only when `github.ref` is `refs/heads/master`;
+  `mode=min` otherwise. PR refs cannot seed master's cache, and `mode=max` on
   every PR exhausts the 10 GB cache budget.
 - **Lock timeouts belong in `PGOPTIONS`.** `prisma migrate deploy` opens its
   own session, so a `SET lock_timeout` in a previous step would not apply:
@@ -153,33 +166,27 @@ understands.
 The one string that must match repository settings is `ci-ok` in every project
 that uses this shape. Nothing else is required by the ruleset.
 
-## Not executed here
+## Execution status
 
-This repository has **no git remote**. `git remote -v` is empty. Nothing in
-`.github/workflows/pr.yml` can run, and no run URL, check result, attestation
-or red PR exists. This is the reason, not a missing step.
+The repository has a remote (`origin` →
+`https://github.com/Amine-Gherbi/cicd-pipeline.git`), and Actions executed the
+workflow for the first time on the merge of W3-a:
 
-- **GitHub Actions has never executed these jobs.** What was checked locally:
-  the workflow parses as YAML; the eight jobs and the `ci-ok` aggregator are
-  present; `ci-ok` needs all eight and uses `if: always()`; every `uses:` is a
-  40-character commit SHA; the forbidden constructs (`continue-on-error`,
-  `|| true`, `@master`) are absent. See `docs/EVIDENCE.md` for the commands and
-  their output. A YAML parse is not a run.
-- **Attestations do not exist.** There is no `release.yml` in this repository
-  yet, no registry push, and no OIDC token without Actions. No provenance or
-  SBOM claim is made here.
-- **The red PR does not exist.** A PR requires a remote. Its exact intended
-  body, the deliberately vulnerable dependency and the expected failing job
-  (`trivy`) are recorded in `docs/EVIDENCE.md`, marked unexecuted.
-- **The image has not been built.** The Docker daemon is unavailable on this
-  machine (`docker info` → pipe access denied, recorded in C0). `Dockerfile`
-  is written for the runner; it is unverified here.
-- **The migration gate was verified against a local PostgreSQL 16**, in a
-  scratch database created for the test and dropped afterwards. That proves the
-  fixture and the commands, not that the Actions service container behaves
-  identically.
+- **Run 40902199280** (`push` to `master`, 2026-10-29): seven gates green;
+  `trivy` failed because it downloaded the `invoice-api-image` artifact without
+  `needs: [image]`; its `always()` SARIF upload then failed on the missing file.
+  `ci-ok` failed and `publish` was skipped.
+- **The fix** is on `w3-b1-green-lane`: `needs: [image]` on `trivy`, a guarded
+  SARIF upload, and a code-scanning availability probe so a disabled scanning
+  target cannot turn a clean scan red.
+- **Green run:** `RUN_URL_TBD`. **Pushed digest:** `DIGEST_TBD`.
 
-To see it execute, a reviewer needs to: create a remote, push `master` as
-`main`, enable Actions, add a ruleset requiring the status check `ci-ok`, and
-open the draft PR described in `docs/EVIDENCE.md`. The workflows are written to
-run there unmodified; they are not claimed to have run here.
+Locally on 2026-10-29: `bash scripts/verify.sh` exit 0 (9/9 tests);
+`docker build -t invoice-api:$SHA .` exit 0; `trivy image --exit-code 1
+--severity CRITICAL,HIGH --ignore-unfixed invoice-api:$SHA` exit 0 with 0
+CRITICAL and 0 HIGH across 2 targets. Commands and output: `docs/EVIDENCE.md`.
+
+Not executed yet: a red PR (none has been opened), a GHCR push and keyless
+signature (`publish` was skipped in 40902199280), and the Render deploy lane
+(W3-b2/W3-c). The image was built and scanned locally; attestation remains a
+path, not a measurement.
