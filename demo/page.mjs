@@ -4,6 +4,7 @@ export function renderPage() {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Dispatch the invoice-api gates, run a deliberately bad image past Trivy, and roll a faulty Render deploy back.">
 <title>pipeline · invoice-api</title>
 <style>
   :root {
@@ -14,7 +15,7 @@ export function renderPage() {
     --line: #23262b;
     --text: #e8e9ea;
     --muted: #8b9098;
-    --dim: #5d636c;
+    --dim: #8b9199;
     --green: #4ade80;
     --red: #f87171;
     --amber: #fbbf24;

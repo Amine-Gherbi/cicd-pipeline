@@ -5,8 +5,13 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { createPrismaClient } from './db.js';
 import { registerErrorHandlers } from './errors.js';
 import { type LoggerConfig } from './logger.js';
+import { securityHeaders } from './plugins/security-headers.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerInvoiceRoutes } from './routes/invoices.js';
+
+// invoice-api serves JSON only: nothing may load, embed or submit anywhere.
+const API_CONTENT_SECURITY_POLICY =
+  "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 export interface BuildAppOptions {
   databaseUrl: string;
@@ -36,6 +41,9 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
   });
+
+  // Registered before the routes so the skip-override hook covers every reply.
+  app.register(securityHeaders, { contentSecurityPolicy: API_CONTENT_SECURITY_POLICY });
 
   registerErrorHandlers(app);
   registerHealthRoutes(app, prisma, migrationsDir);
