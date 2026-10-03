@@ -26,7 +26,7 @@ export function renderPage() {
   body { font-family: var(--sans); font-size: 15px; line-height: 1.5; }
   .shell { max-width: 1180px; margin: 0 auto; padding: 28px 28px 22px; min-height: 100vh; display: flex; flex-direction: column; }
   .head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
-  .brand { display: flex; align-items: center; gap: 10px; font-family: var(--mono); font-size: 15px; letter-spacing: .02em; }
+  .brand { display: flex; align-items: center; gap: 10px; margin: 0; font-family: var(--mono); font-size: 15px; font-weight: 400; letter-spacing: .02em; }
   .mark { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(74,222,128,.12); }
   .meta { color: var(--muted); font-family: var(--mono); font-size: 12px; }
   main { display: grid; grid-template-columns: minmax(320px, 390px) minmax(0, 1fr); gap: 22px; padding: 22px 0 18px; flex: 1; }
@@ -41,7 +41,7 @@ export function renderPage() {
   .action .state.ok { color: var(--green); }
   .action .state.bad { color: var(--red); }
   .action .state.run { color: var(--amber); }
-  .action .title { display: block; margin-top: 7px; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .action .title { display: block; margin: 7px 0 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
   .action .desc { display: block; margin-top: 4px; color: var(--muted); font-size: 13px; }
   .action .ev { display: block; margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); color: var(--dim); font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
   .action .ev a { color: var(--muted); text-decoration: none; border-bottom: 1px solid #3a3f46; }
@@ -57,7 +57,7 @@ export function renderPage() {
   .releases b { color: var(--muted); font-weight: 500; }
   .live { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; min-height: 430px; display: flex; flex-direction: column; }
   .live-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-  .live-head .label { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  .live-head .label { margin: 0; color: var(--muted); font-family: var(--mono); font-size: 12px; font-weight: 400; }
   .live-head a { color: var(--text); font-family: var(--mono); font-size: 12px; text-decoration: none; border-bottom: 1px solid #3a3f46; overflow-wrap: anywhere; }
   .banner { margin-top: 12px; padding: 10px 12px; border-radius: 7px; font-size: 13px; }
   .banner.bad { background: #1d1213; border: 1px solid #4a2a2a; color: #f0b4b4; }
@@ -120,7 +120,7 @@ export function renderPage() {
 <body>
 <div class="shell">
   <header class="head">
-    <div class="brand"><span class="mark"></span> pipeline</div>
+    <h1 class="brand"><span class="mark"></span> pipeline</h1>
     <div class="meta">invoice-api · GitHub Actions · Render</div>
   </header>
 
@@ -128,21 +128,21 @@ export function renderPage() {
     <section class="actions" aria-label="Actions">
       <button class="action" data-action="gates" type="button">
         <span class="top"><span class="num">01</span><span class="state" id="state-gates">idle</span></span>
-        <span class="title">Run the gates</span>
+        <h2 class="title">Run the gates</h2>
         <span class="desc">Eight gates on master. A real workflow dispatch; the job list fills as it runs.</span>
         <span class="ev" id="ev-gates"></span>
       </button>
 
       <button class="action" data-action="bad-image" type="button">
         <span class="top"><span class="num">02</span><span class="state" id="state-bad-image">idle</span></span>
-        <span class="title">Ship a bad image</span>
+        <h2 class="title">Ship a bad image</h2>
         <span class="desc">Build from a pinned base digest with a known HIGH finding. Trivy fails the run.</span>
         <span class="ev" id="ev-bad-image"></span>
       </button>
 
       <button class="action" data-action="rollback" type="button" id="rollback-button">
         <span class="top"><span class="num">03</span><span class="state" id="state-rollback">idle</span></span>
-        <span class="title">Roll back</span>
+        <h2 class="title">Roll back</h2>
         <span class="desc">Deploy the faulty release, watch smoke fail, redeploy the live deploy, re-run smoke.</span>
         <span class="ev" id="ev-rollback"></span>
       </button>
@@ -158,8 +158,8 @@ export function renderPage() {
 
     <section class="live" aria-live="polite" aria-label="Live run">
       <div class="live-head">
-        <span class="label" id="live-label">Live</span>
-        <a id="run-link" href="#" hidden></a>
+        <h2 class="label" id="live-label">Live</h2>
+        <span id="run-link" hidden></span>
       </div>
       <div class="banner" id="banner" hidden></div>
       <div id="jobs" class="jobs"><div class="empty">No action running. Choose one on the left.</div></div>
@@ -434,13 +434,16 @@ export function renderPage() {
     state.activeId = run.id;
     $('live-label').textContent = 'Live · ' + runLabel(run);
     const link = $('run-link');
+    link.replaceChildren();
     if (run.runUrl) {
+      const anchor = el('a', '', 'run ' + run.runId);
+      anchor.href = run.runUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noreferrer';
+      link.append(anchor);
       link.hidden = false;
-      link.href = run.runUrl;
-      link.textContent = 'run ' + run.runId;
     } else {
       link.hidden = true;
-      link.textContent = '';
     }
     setState(run.action, run.status);
     if (run.status === 'failure' && run.error) {
@@ -479,7 +482,7 @@ export function renderPage() {
     if (state.activeId || state.busy) return;
     const runs = (body && body.runs) || [];
     const head = el('div', 'live-head');
-    head.append(el('span', 'label', 'Recent runs'));
+    head.append(el('h2', 'label', 'Recent runs'));
     node.append(head);
     if (runs.length === 0) {
       node.append(el('div', 'empty', 'No runs on this instance yet.'));
