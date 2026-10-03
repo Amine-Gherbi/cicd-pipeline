@@ -244,9 +244,9 @@ describing them. Render service `srv-dbhofsbbc2fs73f0rg0g`, health `/health`.
 
 The ruleset is not a diagram: `main-protection` (id 26152163) is active on the
 default branch and requires `ci-ok`. The proof is a red draft PR
-(<https://github.com/Amine-Gherbi/cicd-pipeline/pull/2>) whose `trivy` and
+(<https://github.com/Amine-Gherbi/cicd-pipeline/pull/6>) whose `trivy` and
 `ci-ok` checks fail in
-<https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40931333527>;
+<https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/41167190749>;
 `mergeable_state` is `blocked`. See `docs/EVIDENCE.md`.
 
 The bad-image path is a real scanner failure, not a scripted `exit 1`. The

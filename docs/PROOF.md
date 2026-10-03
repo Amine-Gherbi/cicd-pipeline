@@ -102,10 +102,10 @@ public smoke passes 5/5 from this machine. Commands and output:
 | Claim | Command that proves it | Status |
 |---|---|---|
 | Actions executes the workflow | `gh run list --workflow=pr.yml` | `verified` — runs 40902199280 and 40929181528 |
-| All eight gates go green | `gh run view 40929181528 --log` | `verified` on `master` — runs 40905865091 and 40929181528; the PR lane is observed red in run 40931333527 |
+| All eight gates go green | `gh run view 40929181528 --log` | `verified` on `master` — runs 40905865091 and 40929181528; the PR lane is observed red in run 41167190749 |
 | The ruleset requires exactly `ci-ok` | `gh api repos/Amine-Gherbi/cicd-pipeline/rulesets/26152163` | `verified` — ruleset `main-protection` (id 26152163), required context `ci-ok` |
-| A red PR cannot merge | `gh pr checks 2`; `gh api repos/Amine-Gherbi/cicd-pipeline/pulls/2 --jq .mergeable_state` | `verified` — PR #2, `ci-ok` failing, `mergeable_state` `blocked` |
-| The red PR fails in `trivy`, not elsewhere | `gh run view 40931333527 --log --job=trivy` | `verified` — `trivy` exit 1, 10 fixable HIGH; `image` passed |
+| A red PR cannot merge | `gh pr checks 6`; `gh api repos/Amine-Gherbi/cicd-pipeline/pulls/2 --jq .mergeable_state` | `verified` — PR #2, `ci-ok` failing, `mergeable_state` `blocked` |
+| The red PR fails in `trivy`, not elsewhere | `gh run view 41167190749 --log --job=trivy` | `verified` — `trivy` exit 1, 10 fixable HIGH; `image` passed |
 | The registry digest exists | `docker buildx imagetools inspect ghcr.io/amine-gherbi/invoice-api:sha-<sha>` | `verified` by the `publish` job in run 40905865091 |
 | The signature verifies | `cosign verify ghcr.io/amine-gherbi/invoice-api@sha256:…` | `verified in the publish job`; no separate transcript here |
 | Provenance verifies | `gh attestation verify oci://ghcr.io/…` | `unverified` — no attestation artifact |

@@ -27,7 +27,7 @@ indexes every claim to its command; this file is the full observation log.
 | Artefact | URL | What it shows |
 |---|---|---|
 | Green `master` run | <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40929181528> | All eight gates, `ci-ok`, `publish` (GHCR + keyless cosign) and `deploy` (Render + public smoke) green end to end. |
-| Red pull request | <https://github.com/Amine-Gherbi/cicd-pipeline/pull/2> | A draft PR whose `trivy` and `ci-ok` checks fail; `mergeable_state` is `blocked` by ruleset `main-protection`. Run: <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40931333527>. |
+| Red pull request | <https://github.com/Amine-Gherbi/cicd-pipeline/pull/6> | A draft PR whose `trivy` and `ci-ok` checks fail; `mergeable_state` is `blocked` by ruleset `main-protection`. Run: <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/41167190749>. |
 | Demo page | <https://pipeline-demo-57mh.onrender.com> | Dispatches the gates, ships the bad image Trivy rejects, and rolls a faulty deploy back with the five smoke assertions. |
 
 ## GitHub Actions — first execution and the green-lane fix (2026-10-29)
@@ -377,7 +377,7 @@ Rows appended for the documentation/output card. The tables above are unchanged.
 ## Verification against GitHub Actions
 
 These rows began before the repository had an Actions lane. Runs 40902199280,
-40905865091, 40929181528 and the red-PR run 40931333527 now answer the
+40905865091, 40929181528 and the red-PR run 41167190749 now answer the
 workflow, ruleset, red-PR and deploy rows. The rows that remain `unverified`
 are the ones this repository still does not produce: attestation, a
 canary-secret PR, a BuildKit cache measurement and the size target.
@@ -385,10 +385,10 @@ canary-secret PR, a BuildKit cache measurement and the size target.
 | Claim | Command that proves it | Status |
 |---|---|---|
 | the workflow runs at all | `gh workflow list`, then `gh run list --workflow=pr.yml` | `verified` — run 40902199280 executed on `master` |
-| all eight gates go green | `gh run view <run-id> --log` | `verified` on `master` — runs 40905865091 and 40929181528; the PR lane is observed red in run 40931333527 |
+| all eight gates go green | `gh run view <run-id> --log` | `verified` on `master` — runs 40905865091 and 40929181528; the PR lane is observed red in run 41167190749 |
 | `ci-ok` is the check the ruleset requires | `gh api repos/Amine-Gherbi/cicd-pipeline/rulesets/26152163` | `verified` — ruleset `main-protection` (id 26152163) is active on `~DEFAULT_BRANCH`; its `required_status_checks` list contains exactly `{"context":"ci-ok"}` |
-| a red PR cannot merge | `gh pr checks 2`; `gh api repos/Amine-Gherbi/cicd-pipeline/pulls/2 --jq .mergeable_state` | `verified` — PR #2: `trivy` and `ci-ok` `fail`; `mergeable_state` `blocked`; `mergeStateStatus` `BLOCKED` |
-| the red PR fails in the expected job | `gh pr checks 2`; expected failing job is `trivy` (see below) | `verified` — `trivy` failed with exit 1 in run 40931333527; `image` passed |
+| a red PR cannot merge | `gh pr checks 6`; `gh api repos/Amine-Gherbi/cicd-pipeline/pulls/2 --jq .mergeable_state` | `verified` — PR #2: `trivy` and `ci-ok` `fail`; `mergeable_state` `blocked`; `mergeStateStatus` `BLOCKED` |
+| the red PR fails in the expected job | `gh pr checks 6`; expected failing job is `trivy` (see below) | `verified` — `trivy` failed with exit 1 in run 41167190749; `image` passed |
 | the image builds on the runner | `gh run view <run-id> --log --job=image` | `verified` — `image` succeeded in run 40902199280 and 40905865091 |
 | Trivy scans the loaded image and keeps its report | `gh run view <run-id> --log --job=trivy` | `verified` scan on `master`; code scanning is disabled, so the SARIF is kept as the run artifact instead of uploaded |
 | BuildKit cache actually helps | `grep -c CACHED build.log`; `gh api repos/{owner}/{repo}/actions/caches` | `unverified` |
@@ -411,20 +411,20 @@ unverified.
 The red PR is real and still open. It is a draft; it is evidence and must not be
 merged.
 
-- PR: <https://github.com/Amine-Gherbi/cicd-pipeline/pull/2>
+- PR: <https://github.com/Amine-Gherbi/cicd-pipeline/pull/6>
 - Branch: `w3-b2b-red-pr-dockerfile` off `master`, commit
   `138645922d91e5172291acd69ea4bddbc8f21c60`
 - Change: the runtime stage of `Dockerfile` goes from `node:22-alpine` to
   `node:18.12.0-alpine@sha256:1f09c210…052996` (alpine 3.16.2). The build stage
   stays on Node 22, so the application still compiles; the image that would
   ship sits on the outdated base.
-- Run: <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40931333527>
+- Run: <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/41167190749>
 - Failing job: `trivy` — exit 1 with 10 fixable HIGH: `libssl1.1` and
   `libcrypto1.1` (CVE-2022-4450, CVE-2023-0215, CVE-2023-0286, CVE-2023-0464)
   and `musl` / `musl-utils` (CVE-2025-26519). The findings are in the alpine
   base, so deleting npm from the runtime stage does not clear them.
 - Failing required check: `ci-ok` —
-  <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40931333527/job/123651396633>
+  <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/41167190749/job/123651396633>
 - Passing jobs: `lint`, `typecheck`, `test (22)`, `image`, `gitleaks`,
   `migration-gate`, `bundle-size`.
 - `gh api repos/Amine-Gherbi/cicd-pipeline/pulls/2 --jq .mergeable_state` →
