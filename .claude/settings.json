@@ -1,0 +1,17 @@
+{
+  "enabledPlugins": {
+    "code-review@claude-plugins-official": true,
+    "claude-security@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": false,
+    "stripe@claude-plugins-official": false,
+    "pyright-lsp@claude-plugins-official": false,
+    "deepeval@claude-plugins-official": false
+  },
+  "enabledMcpjsonServers": ["github"],
+  "permissions": {
+    "allow": ["Bash(npm:*)", "Bash(npx:*)", "Bash(git:*)", "Bash(gh:*)"],
+    "deny": ["Read(.env)", "Edit(.env)", "Bash(git push --force:*)", "Bash(rm -rf:*)"]
+  }
+}
