@@ -1,17 +1,57 @@
 # cicd-pipeline
 
-A delivery pipeline with gates that actually block: eight PR checks feed one required `ci-ok` status, a multi-stage image is scanned with Trivy in CI, and a local release lane swaps, waits for health, smokes, and records a real rollback.
+`invoice-api` is a Fastify + Prisma + PostgreSQL service, and this repository is
+the delivery pipeline that gates it. The PR workflow defines eight gate jobs and
+one aggregator status, `ci-ok`. The local lane builds a release, swaps
+`current`, waits for `/health` and `/ready`, runs five smoke assertions, and
+rolls back to the previous release when a gate fails.
 
-**Hardest problem:** proving the gates can fail, not just run — one aggregator instead of eight unmatched names, `load: true` before Trivy, `exit-code: '1'`, and rollback only after `wait` proved health.
-**Proof:** each claim maps to a command in [docs/PROOF.md](docs/PROOF.md); the two-column truth table is [docs/EVIDENCE.md](docs/EVIDENCE.md).
+## What it proves
 
-**Live URL:** none — **local only** at `http://127.0.0.1:8787` (Windows excludes 8001–8300 on this host; 8080 is unusable).
-**Demo (≤30 s):** `./scripts/release-local.sh <sha>` deploys; `RELEASE_FAULT=invoices-500 ./scripts/release-local.sh <sha> broken` fails smoke and rolls back in ~24 s.
+- The workflow defines one aggregator, `ci-ok`, for the eight gate jobs, not
+  eight unmatched names; the YAML parses and its jobs, SHA pinning and Trivy
+  flags are checked structurally.
+- A release is recorded live only after `wait` returned 200 from `/health` and
+  `/ready` and all five smoke assertions passed: `deploy.log` shows `health.ok`
+  then `smoke.ok`.
+- A failed smoke gate triggers a rollback that restarts, re-waits and re-smokes
+  the previous release before `rollback.smoke.ok` is written.
 
-**Test status:** `bash scripts/verify.sh` → lint, typecheck and 9/9 integration tests, exit 0.
-**CI status:** the eight-gate workflow is written and locally validated, but **no GitHub Actions run exists** — this repository has no remote. C3 (image, Trivy, cosign, GHCR) is **unverified**, not simulated.
+## Run it
 
-## What is real here
+```bash
+bash scripts/verify.sh    # lint, types, 9 integration tests
+bash scripts/demo.sh      # release, smoke pass, broken release, smoke fail, rollback
+```
+
+Evidence: [docs/OUTPUT.md](docs/OUTPUT.md) has each command, its exit code and
+the output captured on this machine. `docs/EVIDENCE.md` separates
+`verified locally` from `unverified`.
+
+**Local only.** There is no git remote, so no GitHub Actions run exists. The CI
+lane is written and structurally checked, not executed.
+
+## Commands
+
+| Command | What it prints |
+|---|---|
+| `bash scripts/verify.sh` | `==> lint`, `==> types`, `==> tests`, `==> result`, then `verify: ok` or `verify: FAILED` |
+| `bash scripts/demo.sh` | healthy and broken release transcripts, then a PASS/FAIL summary with elapsed time |
+| `bash scripts/release-local.sh <sha> [label]` | `deploy.start` through `health.ok` and smoke lines; `rollback.*` on failure |
+| `bash scripts/release-local.sh status` | current, previous, pid, and the last 20 `deploy.log` lines |
+| `bash scripts/smoke.sh` | five `PASS`/`FAIL` lines and one `smoke: ok` or `smoke: FAIL` line |
+| `bash scripts/service.sh start\|stop\|restart\|status` | one line per action, or current/pid/port/log |
+| `bash scripts/check-destructive.sh <migrations-dir>` | `N migration file(s) checked`, or each unlabelled `DROP`/`RENAME` |
+| `./scripts/capture-assets` | four WebP files, `manifest.json`, and proof transcripts in the asset directory |
+| `PGOPTIONS='-c lock_timeout=3s -c statement_timeout=30s' npx prisma migrate deploy` | `No pending migrations to apply.` or Prisma's apply error |
+| `npm run test` | Vitest file/test counts and `9 passed` |
+| `npm run build` | `tsc` errors, if any; writes `dist/` |
+
+Run `bash scripts/verify.sh` from the repository root with PostgreSQL 16 on
+`localhost:5433` and `.env` pointing at it. `invoice-api` documents port 8080;
+this Windows host excludes TCP 8001–8300, so the local lane uses 8787.
+
+## What runs here
 
 | Lane | Status on this machine | Evidence |
 |---|---|---|
@@ -23,35 +63,40 @@ A delivery pipeline with gates that actually block: eight PR checks feed one req
 | Promotion from P2 | Path documented with `cosign verify` + `gh attestation verify`; **not executed** — no registry credentials, no P2 run here | `docs/PIPELINE.md` |
 | Hub assets | 4 WebP at 2880×1800 plus `manifest.json`; accepted by the hub's `check:assets`. The hero is a labelled mock, not a screenshot. | `P:/portfolio/_shared/assets/cicd-pipeline/` |
 
-## Quick start
+## Manual release
 
 ```bash
 npm ci
 # .env: DATABASE_URL=postgresql://postgres@localhost:5433/invoice_dev?schema=public
 npm run dev                 # documents 8080; use PORT=8787 on this Windows host
-npm run verify              # lint + typecheck + integration tests
+npm run verify              # lint, types and integration tests
 ```
 
 Deploy and exercise the gate:
 
 ```bash
 # git-bash / Linux
-PORT=8787 ./scripts/release-local.sh "$(git rev-parse HEAD)"          # healthy: wait → smoke
+PORT=8787 ./scripts/release-local.sh "$(git rev-parse HEAD)"          # healthy: wait -> smoke
 RELEASE_FAULT=invoices-500 PORT=8787 ./scripts/release-local.sh "$(git rev-parse HEAD)" broken
 PORT=8787 ./scripts/release-local.sh status                           # current, previous, deploy.log
 ```
+
+`release-local.sh` rebuilds `.releases/<sha>`. On this host a release directory
+that is the running process's working directory cannot be moved, so stop the
+service first if that release is current. `demo.sh` does this for its own
+rebuild.
 
 ```powershell
 # Windows PowerShell 5.1 — no `VAR=value cmd`, no `&&`, no `tail`,
 # and `bash` here resolves to WSL (no node), so call Git bash explicitly.
 $gitBash = 'C:/Program Files/Git/bin/bash.exe'
 $env:PORT = '8787'
-& $gitBash scripts/release-local.sh (git rev-parse HEAD)              # healthy: wait → smoke
+& $gitBash scripts/release-local.sh (git rev-parse HEAD)              # healthy: wait -> smoke
 $env:RELEASE_FAULT = 'invoices-500'
 & $gitBash scripts/release-local.sh (git rev-parse HEAD) broken       # fails smoke, rolls back
 Remove-Item Env:RELEASE_FAULT
 & $gitBash scripts/release-local.sh status
-Get-Content deploy.log -Tail 12                                       # deploy.start → health.ok → smoke.fail → rollback.start
+Get-Content deploy.log -Tail 12                                       # deploy.start -> health.ok -> smoke.fail -> rollback.start
 ```
 
 The service is started detached, so the PowerShell call can return before the smoke output finishes
@@ -63,7 +108,7 @@ printing. The truth is `deploy.log`, not the console.
 ```
 CI lane (GitHub Actions only)     local lane (this machine)
 build → Trivy → attest → GHCR     build → swap → wait → smoke → rollback
-        verified by cosign        recorded in deploy.log
+  cosign path, not run here       recorded in deploy.log
 ```
 
 The CI lane cannot deploy: a runner cannot reach this machine, and there is no
@@ -78,10 +123,11 @@ promotion path, and what the portable core is.
 src/                       Fastify + Prisma invoice-api
 tests/integration/         9 integration tests (real PostgreSQL)
 Dockerfile                 multi-stage, non-root runtime; alpine, 535 MB → 284 MB
+scripts/demo.sh            release → broken release → rollback, one command
 scripts/release-local.sh   build → swap → wait → smoke → rollback
 scripts/smoke.sh           5 named assertions
 scripts/capture-assets.mjs 4 WebP + manifest for the portfolio hub
-docs/                      PIPELINE, EVIDENCE, PROOF, ROLLBACK
+docs/                      PIPELINE, EVIDENCE, OUTPUT, PROOF, ROLLBACK
 ```
 
 ## Assets
