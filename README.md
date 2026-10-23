@@ -100,8 +100,8 @@ there is no GitHub page to screenshot because there is no remote.
 - **No Actions run, no PR, no run URL.** The red-PR body is recorded as an
   unexecuted artifact in `docs/EVIDENCE.md`; a screenshot of it would be invented.
 - **No image scan, signature, attestation or GHCR push.** The image builds and runs locally
-  (2026-10-23); the daemon
-  is unreachable on this host, so C3 cannot be claimed.
+  (2026-10-23, 535 MB), but Trivy, cosign, attestation and GHCR all need a registry and a
+  remote, so C3 is not claimed as done.
 - **Local only.** `http://127.0.0.1:8787` is not reachable by a reviewer.
 - **Rollback is one release back**, and only when migrations followed
   expand/contract. It swaps code, not schema. See `docs/ROLLBACK.md`.
