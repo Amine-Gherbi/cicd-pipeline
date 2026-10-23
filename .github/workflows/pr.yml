@@ -1,0 +1,259 @@
+name: pr
+
+# The only required status check is the literal string `ci-ok` (see the ruleset).
+# Every job feeds that aggregator; a matrix suffix must never be a required check.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Engines are >=22 <23. The matrix exists so the one supported major is
+        # named explicitly; ci-ok is what the ruleset requires, never `test (22)`.
+        node: [22]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: invoice_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:pg@localhost:5432/invoice_test?schema=public
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run test
+
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@f7ce87c1d6bead3e36075b2ce75da1f6cc28aaca # v3.9.0
+      - name: Build the image and load it into the local daemon
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
+        with:
+          context: .
+          push: false
+          # Without load: true the image never reaches the daemon and the trivy
+          # job would scan nothing while reporting success.
+          load: true
+          tags: invoice-api:${{ github.sha }}
+          cache-from: type=gha,scope=invoice-api
+          # PR refs cannot seed main's cache; mode=max on every PR would exhaust
+          # the 10 GB GHA cache budget. max only when building on main.
+          cache-to: type=gha,scope=invoice-api,mode=${{ github.ref == 'refs/heads/main' && 'max' || 'min' }}
+      - name: Export the loaded image for the trivy job
+        run: docker save invoice-api:${{ github.sha }} -o "${{ runner.temp }}/invoice-api.tar"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: invoice-api-image
+          path: ${{ runner.temp }}/invoice-api.tar
+          retention-days: 1
+
+  trivy:
+    name: trivy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: invoice-api-image
+          path: ${{ runner.temp }}
+      - name: Load the image built by the image job
+        run: docker load --input "${{ runner.temp }}/invoice-api.tar"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/trivy
+          key: ${{ runner.os }}-trivy-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-trivy-
+      - name: Scan CRITICAL and HIGH with a failing exit code
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          image-ref: invoice-api:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          cache-dir: ~/.cache/trivy
+      - name: Upload the scan result even when the gate failed
+        if: always()
+        uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  migration-gate:
+    name: migration-gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # Prisma needs the schema parameter; libpq (psql) rejects it as an unknown
+      # URI parameter, so the fixture step uses PSQL_URL below.
+      DATABASE_URL: postgresql://postgres:pg@localhost:5432/gate?schema=public
+      PSQL_URL: postgresql://postgres:pg@localhost:5432/gate
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: gate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Load the previous release's schema and rows
+        run: psql "$PSQL_URL" -v ON_ERROR_STOP=1 -f fixtures/pre-release.sql
+      - name: Apply migrations under a lock timeout
+        # migrate deploy opens its own session, so a prior SET would not apply.
+        # PGOPTIONS is the only lever that reaches that session.
+        run: PGOPTIONS='-c lock_timeout=3s -c statement_timeout=30s' npx prisma migrate deploy
+      - name: Fail on schema drift
+        # 0 = clean, 2 = drift, 1 = the command itself failed. Both non-zero
+        # outcomes fail the gate; neither is swallowed.
+        run: |
+          set +e
+          npx prisma migrate diff \
+            --from-url "$DATABASE_URL" \
+            --to-schema-datamodel prisma/schema.prisma \
+            --exit-code
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "migration-gate: no drift" ;;
+            2) echo "migration-gate: schema drift between the migrated database and prisma/schema.prisma"; exit 1 ;;
+            *) echo "migration-gate: prisma migrate diff could not run (exit $rc)"; exit 1 ;;
+          esac
+      - name: Refuse destructive migrations without a label
+        run: bash scripts/check-destructive.sh prisma/migrations
+
+  bundle-size:
+    name: bundle-size
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Enforce the dist budget
+        run: |
+          set -euo pipefail
+          budget_kib=512
+          kib=$(du -sk dist | cut -f1)
+          echo "bundle-size: dist/ = ${kib} KiB (budget ${budget_kib} KiB)"
+          if [ "$kib" -gt "$budget_kib" ]; then
+            echo "bundle-size: dist/ exceeds the ${budget_kib} KiB budget"
+            exit 1
+          fi
+
+  ci-ok:
+    name: ci-ok
+    # Runs even when an upstream job failed, so it can report the failure.
+    if: always()
+    needs: [lint, typecheck, test, image, trivy, gitleaks, migration-gate, bundle-size]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Every gate must have succeeded
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'to_entries | all(.value.result == "success")' \
+            || { echo "ci-ok: at least one gate did not succeed"; exit 1; }
