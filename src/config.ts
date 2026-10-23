@@ -17,6 +17,9 @@ const envSchema = z.object({
   HOST: z.string().min(1).default('127.0.0.1'),
   DATABASE_URL: databaseUrlSchema.optional(),
   LOG_LEVEL: z.enum(logLevels).default('info'),
+  // When set, POST /invoices requires `Authorization: Bearer <token>`. The
+  // local release lane seeds it in .env.local and smoke.sh proves it is enforced.
+  SMOKE_TOKEN: z.string().min(16).optional(),
 });
 
 export type AppConfig = Omit<z.infer<typeof envSchema>, 'DATABASE_URL'> & {

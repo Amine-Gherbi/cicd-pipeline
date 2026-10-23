@@ -13,6 +13,7 @@ export interface BuildAppOptions {
   migrationsDir?: string;
   logger?: LoggerConfig;
   prisma?: PrismaClient;
+  smokeToken?: string;
 }
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
@@ -38,7 +39,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
   registerErrorHandlers(app);
   registerHealthRoutes(app, prisma, migrationsDir);
-  registerInvoiceRoutes(app, prisma);
+  registerInvoiceRoutes(app, prisma, options.smokeToken);
 
   app.addHook('onClose', async () => {
     await prisma.$disconnect();

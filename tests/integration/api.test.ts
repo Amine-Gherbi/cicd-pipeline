@@ -17,7 +17,10 @@ type App = Awaited<ReturnType<typeof buildApp>>;
 
 const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
 
+const smokeToken = 'smoke-test-token-0123456789';
+
 let app: App;
+let authedApp: App;
 let pendingApp: App;
 let pendingMigrationsDir: string;
 
@@ -29,6 +32,7 @@ beforeAll(async () => {
   });
 
   app = await buildApp({ databaseUrl, migrationsDir });
+  authedApp = await buildApp({ databaseUrl, migrationsDir, smokeToken });
 
   pendingMigrationsDir = mkdtempSync(join(tmpdir(), 'invoice-migrations-'));
   cpSync(migrationsDir, pendingMigrationsDir, { recursive: true });
@@ -44,6 +48,7 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await app.close();
+  await authedApp.close();
   await pendingApp.close();
   await prisma.$disconnect();
   rmSync(pendingMigrationsDir, { recursive: true, force: true });
@@ -94,6 +99,25 @@ describe('invoice-api integration', () => {
     const stored = await prisma.invoice.findUniqueOrThrow({ where: { id: body.id } });
     expect(stored.amountCents).toBe(2599);
     expect(Number.isInteger(stored.amountCents)).toBe(true);
+  });
+
+  it('POST /invoices requires the bearer token when SMOKE_TOKEN is configured', async () => {
+    const body = { customerId: 'cus_auth', amountCents: 100 };
+
+    const anonymous = await authedApp.inject({ method: 'POST', url: '/invoices', payload: body });
+    expect(anonymous.statusCode).toBe(401);
+    expect(anonymous.json()).toEqual({
+      error: { code: 'unauthorized', message: 'A valid bearer token is required' },
+    });
+
+    const authorized = await authedApp.inject({
+      method: 'POST',
+      url: '/invoices',
+      payload: body,
+      headers: { authorization: `Bearer ${smokeToken}` },
+    });
+    expect(authorized.statusCode).toBe(201);
+    expect(authorized.json<{ id: string }>().id).toMatch(uuidPattern);
   });
 
   it('POST /invoices rejects a non-integer amount with a structured error', async () => {

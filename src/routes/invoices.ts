@@ -1,5 +1,6 @@
+import { timingSafeEqual } from 'node:crypto';
 import type { Invoice, PrismaClient } from '@prisma/client';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, validationFailed } from '../errors.js';
 
@@ -43,8 +44,29 @@ function toResponse(invoice: Invoice): InvoiceResponse {
   };
 }
 
-export function registerInvoiceRoutes(app: FastifyInstance, prisma: PrismaClient): void {
-  app.post('/invoices', async (request, reply) => {
+function constantTimeEqual(left: string, right: string): boolean {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function smokeTokenGuard(token: string) {
+  return async (request: FastifyRequest): Promise<void> => {
+    const header = request.headers.authorization;
+    if (typeof header !== 'string' || !constantTimeEqual(header, `Bearer ${token}`)) {
+      throw new AppError(401, 'unauthorized', 'A valid bearer token is required');
+    }
+  };
+}
+
+export function registerInvoiceRoutes(
+  app: FastifyInstance,
+  prisma: PrismaClient,
+  smokeToken?: string,
+): void {
+  const postOptions = smokeToken === undefined ? {} : { preHandler: smokeTokenGuard(smokeToken) };
+
+  app.post('/invoices', postOptions, async (request, reply) => {
     const parsed = createInvoiceSchema.safeParse(request.body);
     if (!parsed.success) {
       throw validationFailed(

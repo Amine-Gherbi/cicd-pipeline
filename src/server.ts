@@ -7,6 +7,7 @@ async function main(): Promise<void> {
   const app = await buildApp({
     databaseUrl: config.DATABASE_URL,
     logger: buildLoggerOptions(config.LOG_LEVEL),
+    ...(config.SMOKE_TOKEN === undefined ? {} : { smokeToken: config.SMOKE_TOKEN }),
   });
 
   const shutdown = async (signal: string): Promise<void> => {

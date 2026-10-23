@@ -5,3 +5,9 @@ coverage/
 .env.local
 .DS_Store
 *.log
+# deploy.log is the rollback evidence and is committed deliberately
+!deploy.log
+.releases/
+.deploy/
+current
+current.txt
