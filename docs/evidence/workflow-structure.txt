@@ -1,0 +1,11 @@
+jobs: lint, typecheck, test, image, trivy, gitleaks, migration-gate, bundle-size, ci-ok
+ci-ok needs: lint, typecheck, test, image, trivy, gitleaks, migration-gate, bundle-size
+uses entries: 20
+uses not pinned to a 40-char SHA: 0
+continue-on-error occurrences: 0
+|| true occurrences: 0
+@master occurrences: 0
+trivy exit-code 1: true
+trivy severity CRITICAL,HIGH: true
+trivy ignore-unfixed: true
+image load true: true

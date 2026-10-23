@@ -1,0 +1,7 @@
+smoke: http://127.0.0.1:8787 (release .releases/3b8fe5926fe4f150ef376c9a74b233a517d8c58f)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 7.7ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)

@@ -1,0 +1,2 @@
+[assets] cicd-pipeline: manifest valid, 4 shots present, 6 measurements and 3 invariants backed by files
+[assets] 1 ready, 0 without a manifest; snapshot check passed

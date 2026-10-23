@@ -2,8 +2,9 @@
 
 This document describes `.github/workflows/pr.yml`: the gates a pull request
 must pass before it can merge. It is deliberately narrower than the whole
-delivery story — the release lane (tag → image → attest → push) is a separate
-workflow and is not claimed here.
+delivery story — the release lane (tag → image → attest → push) is not present
+in this repository yet and is not claimed here. The promotion path below is a
+documented, unexecuted path, not a run.
 
 ## One required check: `ci-ok`
 
@@ -114,6 +115,74 @@ results, nothing else.
 The CI lane cannot deploy: the runner cannot reach this machine, and there is
 no paid staging host (decision recorded 2026-10-22). Neither lane stands in for
 the other.
+
+## Promotion path — a verified path, not a verified run
+
+Promotion is **artifact-only**: P3 verifies the image P2 published, and never
+imports P2's code. The image is the interface. The commit behind it is deployed
+by the local lane, not by the CI lane.
+
+Let `<owner>` be the account and `<digest>` the `sha256:…` digest P2's release
+workflow pushed. A reviewer with registry access runs both checks:
+
+```bash
+# 1. The signature was made by P2's release workflow identity, keyless via OIDC.
+digest=sha256:<digest>
+cosign verify "ghcr.io/<owner>/ecommerce-platform@${digest}" \
+  --certificate-identity-regexp '^https://github\.com/<owner>/ecommerce-platform/\.github/workflows/release\.yml@refs/heads/main$' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+
+# 2. The provenance attestation binds that digest to the repository and workflow.
+gh attestation verify "oci://ghcr.io/<owner>/ecommerce-platform@${digest}" \
+  --repo <owner>/ecommerce-platform \
+  --signer-workflow <owner>/ecommerce-platform/.github/workflows/release.yml
+```
+
+What each command actually proves:
+
+| Command | Proves | Does **not** prove |
+|---|---|---|
+| `cosign verify` | the digest was signed by that workflow's OIDC identity, so an arbitrary pusher cannot substitute it | that the image runs, or that the tests passed |
+| `gh attestation verify` | the provenance statement ties the digest to the repository, commit and signing workflow | that the commit is safe to deploy |
+| `release-local.sh` (P2 repository, same commit) | the attested commit can be built, swapped, waited for, smoked and rolled back on a machine | that the deployed bytes are the registry digest — the local lane builds from source |
+
+The deploy half, run in the **P2 repository** (P3's `release-local.sh` deploys
+`invoice-api`, not the Next app):
+
+```bash
+git -C ../ecommerce-platform rev-parse HEAD     # must be the attested revision
+./scripts/release-local.sh "$(git -C ../ecommerce-platform rev-parse HEAD)"
+```
+
+**Status: `unverified`.** This machine has no git remote, no GHCR credentials
+and no P2 run, so neither verify command nor the deploy has executed. It is a
+verified *path* in the sense that the artifact boundary is enforced and each
+failure mode is named; it is **not** a verified *run*. `docs/EVIDENCE.md`
+records both commands as unverified rows.
+
+The digest is never replaced by a tag: a tag can move, a digest cannot. That is
+why the commands above take `@sha256:…` and why the local lane records the full
+commit SHA in `.releases/<sha>/manifest.json`.
+
+## Portable core
+
+The same gate shapes are reused across the four projects; only the tooling
+under each gate changes. Four copies of roughly 120 lines are deliberate: a
+shared workflow repository would rename checks to `<caller> / <called>` and
+silently unmatch every ruleset — the exact failure this project demonstrates it
+understands.
+
+| Gate | P1 Astro | P2 Next | **P3 invoice-api** | P4 Python |
+|---|---|---|---|---|
+| lint / type / unit | tsc + eslint | tsc + eslint + vitest | **tsc + eslint + vitest** | ruff + mypy + pytest |
+| trivy fs + gitleaks | yes | yes | **yes** | yes |
+| image build + scan + attest | no | yes (P2 owns the publish; verified from here only by command) | **yes (written, unverified here)** | yes |
+| migration gate | no | Prisma | **Prisma + lock timeout + drift + destructive check** | Alembic |
+| smoke | preview URL | preview deploy | **local release lane, 5 assertions** | eval report |
+| release | static deploy | static deploy + image | **GHCR + tag (path only) + local swap** | GHCR + eval artifact |
+
+The one string that must match repository settings is `ci-ok` in every project
+that uses this shape. Nothing else is required by the ruleset.
 
 ## Not executed here
 

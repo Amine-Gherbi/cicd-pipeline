@@ -1,0 +1,9 @@
+FROM stages: 2
+named build stage: true
+named runtime stage: true
+runtime drops dev deps: true
+non-root USER node: true
+HEALTHCHECK present: true
+EXPOSE 8080: true
+dockerignore entries: 10
+docker build: UNVERIFIED (docker info: Access is denied)
