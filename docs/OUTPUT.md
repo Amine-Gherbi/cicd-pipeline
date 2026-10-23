@@ -3,7 +3,8 @@
 Captured on 2026-10-23 on the machine described in `docs/PROOF.md`: Windows 11,
 Git Bash 5.2.37, Node v22.23.4, PostgreSQL 16 on `localhost:5433`, service on
 `127.0.0.1:8787`, Docker engine 28.1.1, HEAD
-`d014b82b290edc97a3e66a134d9c2bdbcfc3f6af`.
+`d014b82b290edc97a3e66a134d9c2bdbcfc3f6af` (the two consecutive demo runs below
+were captured later at `29e806527f5b5125519a15317587393c76fe0d51`).
 
 Each block is a real run. ANSI colour escapes were removed from the two Vitest
 transcripts; the lines are otherwise exactly as printed. A block is trimmed
@@ -129,6 +130,368 @@ smoke (broken)            FAIL         FAIL      3s
 rollback                  PASS         PASS      7s
 demo: ok - rollback verified
 ```
+
+## Two consecutive `PORT=8787 bash scripts/demo.sh` runs
+
+The earlier `demo.sh` capture above predates this change and is kept as history.
+The two runs below were captured 2026-10-23 at HEAD
+`29e806527f5b5125519a15317587393c76fe0d51`, one directly after the other. **Run 1 exit code: 0. Run 2 exit code: 0.** No process was killed
+by hand between them: the second run found the service that the first run left on
+port 8787, verified from its command line that it was running a release inside this
+repository, stopped it, and rebuilt.
+
+### Run 1
+
+Command:
+
+```bash
+PORT=8787 bash scripts/demo.sh
+```
+
+Exit code: 0. Output:
+
+```text
+==> demo: stopping pid 19304 on port 8787 before building (its command line runs a release in this repo: C:\Users\interview\AppData\Local\fnm_multishells\14012_1792769349651\node.exe dist/server.js --release-dir P:\portfolio\cicd-pipeline\.releases\29e806527f5b5125519a15317587393c76fe0d51-20261023T153902Z-5899)
+==> demo: healthy release 29e806527f5b5125519a15317587393c76fe0d51
+==> current pointer: current.txt (native symlinks unavailable on this host)
+==> deploy.start 29e806527f5b5125519a15317587393c76fe0d51 (release 29e806527f5b5125519a15317587393c76fe0d51, dirty=1)
+==> build
+==> PREVIOUS_REF=.releases/29e806527f5b5125519a15317587393c76fe0d51-20261023T153902Z-5899
+==> built .releases/29e806527f5b5125519a15317587393c76fe0d51
+==> current -> .releases/29e806527f5b5125519a15317587393c76fe0d51
+service is not running (no pid file)
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51 (pid 19768) on 127.0.0.1:8787
+==> health.ok
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 8.7ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+==> smoke.ok
+release 29e806527f5b5125519a15317587393c76fe0d51 is live on http://127.0.0.1:8787
+
+==> demo: deliberately broken release 29e806527f5b5125519a15317587393c76fe0d51 (RELEASE_FAULT=invoices-500)
+==> current pointer: current.txt (native symlinks unavailable on this host)
+==> deploy.start 29e806527f5b5125519a15317587393c76fe0d51 (release 29e806527f5b5125519a15317587393c76fe0d51-broken, dirty=1)
+==> build
+==> injected deliberate fault: invoices-500
+==> PREVIOUS_REF=.releases/29e806527f5b5125519a15317587393c76fe0d51
+==> built .releases/29e806527f5b5125519a15317587393c76fe0d51-broken
+==> current -> .releases/29e806527f5b5125519a15317587393c76fe0d51-broken
+stopped pid 19768
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51-broken (pid 19216) on 127.0.0.1:8787
+==> health.ok
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51-broken)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+FAIL 3/5 POST /invoices authenticated — authenticated request returned 500, expected 201
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 9.8ms < 300ms (5 warm samples)
+smoke: FAIL (1 of 5 assertions)
+smoke gate failed
+==> rollback to .releases/29e806527f5b5125519a15317587393c76fe0d51
+stopped pid 19216
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51 (pid 21628) on 127.0.0.1:8787
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 11.4ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+rollback complete: .releases/29e806527f5b5125519a15317587393c76fe0d51 is live and passes smoke
+rolled back to .releases/29e806527f5b5125519a15317587393c76fe0d51 after smoke.fail
+
+demo summary
+step                      result       expected  elapsed
+------------------------  ----------   --------  -------
+release (healthy)         PASS         PASS      15s
+smoke (healthy)           PASS         PASS      5s
+release (broken)          PASS         PASS      15s
+smoke (broken)            FAIL         FAIL      5s
+rollback                  PASS         PASS      14s
+demo: service state - pid 21628 is the only listener on port 8787 and matches .deploy/service.pid
+demo: ok - rollback verified
+```
+
+### Run 2 (immediately after)
+
+Command:
+
+```bash
+PORT=8787 bash scripts/demo.sh
+```
+
+Exit code: 0. Output:
+
+```text
+==> demo: stopping pid 21628 on port 8787 before building (its command line runs a release in this repo: C:\Users\interview\AppData\Local\fnm_multishells\14012_1792769349651\node.exe dist/server.js --release-dir P:\portfolio\cicd-pipeline\.releases\29e806527f5b5125519a15317587393c76fe0d51)
+==> demo: healthy release 29e806527f5b5125519a15317587393c76fe0d51
+==> current pointer: current.txt (native symlinks unavailable on this host)
+==> deploy.start 29e806527f5b5125519a15317587393c76fe0d51 (release 29e806527f5b5125519a15317587393c76fe0d51, dirty=1)
+==> build
+==> PREVIOUS_REF=.releases/29e806527f5b5125519a15317587393c76fe0d51
+==> built .releases/29e806527f5b5125519a15317587393c76fe0d51
+==> current -> .releases/29e806527f5b5125519a15317587393c76fe0d51
+service is not running (no pid file)
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51 (pid 3832) on 127.0.0.1:8787
+==> health.ok
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 9.2ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+==> smoke.ok
+release 29e806527f5b5125519a15317587393c76fe0d51 is live on http://127.0.0.1:8787
+
+==> demo: deliberately broken release 29e806527f5b5125519a15317587393c76fe0d51 (RELEASE_FAULT=invoices-500)
+==> current pointer: current.txt (native symlinks unavailable on this host)
+==> deploy.start 29e806527f5b5125519a15317587393c76fe0d51 (release 29e806527f5b5125519a15317587393c76fe0d51-broken, dirty=1)
+==> build
+==> injected deliberate fault: invoices-500
+==> PREVIOUS_REF=.releases/29e806527f5b5125519a15317587393c76fe0d51
+==> built .releases/29e806527f5b5125519a15317587393c76fe0d51-broken
+==> current -> .releases/29e806527f5b5125519a15317587393c76fe0d51-broken
+stopped pid 3832
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51-broken (pid 21384) on 127.0.0.1:8787
+==> health.ok
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51-broken)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+FAIL 3/5 POST /invoices authenticated — authenticated request returned 500, expected 201
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 7.5ms < 300ms (5 warm samples)
+smoke: FAIL (1 of 5 assertions)
+smoke gate failed
+==> rollback to .releases/29e806527f5b5125519a15317587393c76fe0d51
+stopped pid 21384
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51 (pid 17444) on 127.0.0.1:8787
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 8.6ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+rollback complete: .releases/29e806527f5b5125519a15317587393c76fe0d51 is live and passes smoke
+rolled back to .releases/29e806527f5b5125519a15317587393c76fe0d51 after smoke.fail
+
+demo summary
+step                      result       expected  elapsed
+------------------------  ----------   --------  -------
+release (healthy)         PASS         PASS      13s
+smoke (healthy)           PASS         PASS      5s
+release (broken)          PASS         PASS      15s
+smoke (broken)            FAIL         FAIL      4s
+rollback                  PASS         PASS      11s
+demo: service state - pid 17444 is the only listener on port 8787 and matches .deploy/service.pid
+demo: ok - rollback verified
+```
+
+The busy-directory fallback that makes run 1 possible is also exercised directly:
+`bash scripts/release-local.sh 29e806527f5b5125519a15317587393c76fe0d51` while that
+release was live printed
+
+```text
+==> .releases/29e806527f5b5125519a15317587393c76fe0d51 is busy (a process still holds it); building fresh release .releases/29e806527f5b5125519a15317587393c76fe0d51-20261023T153902Z-5899
+```
+
+and exited 0.
+
+## Two consecutive `PORT=8787 bash scripts/demo.sh` runs after the WINPID/taskkill fix (P3-D4)
+
+Captured 2026-10-23 at HEAD `29e806527f5b5125519a15317587393c76fe0d51` (deploy.log
+events at `15:58:15Z` and `15:59:27Z`). Each run started with a live
+`node dist/server.js` from the previous run already listening on 8787. **Run 1
+exit code: 0. Run 2 exit code: 0.** The line
+`demo: stopped WINPID <pid>; port 8787 free after <n>s` is printed only after
+`netstat` no longer lists the port.
+
+### Run 1
+
+Command:
+
+```bash
+PORT=8787 bash scripts/demo.sh
+```
+
+Exit code: 0. Output:
+
+```text
+==> demo: stopping WINPID 7652 on port 8787 before building (its command line runs a release in this repo: C:\Users\interview\AppData\Local\fnm_multishells\20608_1792770741294\node.exe dist/server.js --release-dir P:\portfolio\cicd-pipeline\.releases\29e806527f5b5125519a15317587393c76fe0d51)
+==> demo: stopped WINPID 7652; port 8787 free after 1.578s
+==> demo: healthy release 29e806527f5b5125519a15317587393c76fe0d51
+==> current pointer: current.txt (native symlinks unavailable on this host)
+==> deploy.start 29e806527f5b5125519a15317587393c76fe0d51 (release 29e806527f5b5125519a15317587393c76fe0d51, dirty=1)
+==> build
+==> PREVIOUS_REF=.releases/29e806527f5b5125519a15317587393c76fe0d51
+==> built .releases/29e806527f5b5125519a15317587393c76fe0d51
+==> current -> .releases/29e806527f5b5125519a15317587393c76fe0d51
+service is not running (no pid file)
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51 (pid 20848) on 127.0.0.1:8787
+==> health.ok
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 9.1ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+==> smoke.ok
+release 29e806527f5b5125519a15317587393c76fe0d51 is live on http://127.0.0.1:8787
+
+==> demo: deliberately broken release 29e806527f5b5125519a15317587393c76fe0d51 (RELEASE_FAULT=invoices-500)
+==> current pointer: current.txt (native symlinks unavailable on this host)
+==> deploy.start 29e806527f5b5125519a15317587393c76fe0d51 (release 29e806527f5b5125519a15317587393c76fe0d51-broken, dirty=1)
+==> build
+==> injected deliberate fault: invoices-500
+==> PREVIOUS_REF=.releases/29e806527f5b5125519a15317587393c76fe0d51
+==> built .releases/29e806527f5b5125519a15317587393c76fe0d51-broken
+==> current -> .releases/29e806527f5b5125519a15317587393c76fe0d51-broken
+stopped WINPID 20848 after 100ms
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51-broken (pid 2524) on 127.0.0.1:8787
+==> health.ok
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51-broken)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+FAIL 3/5 POST /invoices authenticated — authenticated request returned 500, expected 201
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 8.0ms < 300ms (5 warm samples)
+smoke: FAIL (1 of 5 assertions)
+smoke gate failed
+==> rollback to .releases/29e806527f5b5125519a15317587393c76fe0d51
+stopped WINPID 2524 after 100ms
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51 (pid 20588) on 127.0.0.1:8787
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 7.6ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+rollback complete: .releases/29e806527f5b5125519a15317587393c76fe0d51 is live and passes smoke
+rolled back to .releases/29e806527f5b5125519a15317587393c76fe0d51 after smoke.fail
+
+demo summary
+step                      result       expected  elapsed
+------------------------  ----------   --------  -------
+release (healthy)         PASS         PASS      16s
+smoke (healthy)           PASS         PASS      6s
+release (broken)          PASS         PASS      15s
+smoke (broken)            FAIL         FAIL      4s
+rollback                  PASS         PASS      12s
+demo: service state - pid 20588 is the only listener on port 8787 and matches .deploy/service.pid
+demo: ok - rollback verified
+```
+
+### Run 2 (immediately after)
+
+Command:
+
+```bash
+PORT=8787 bash scripts/demo.sh
+```
+
+Exit code: 0. Output:
+
+```text
+==> demo: stopping WINPID 20588 on port 8787 before building (its command line runs a release in this repo: C:\Users\interview\AppData\Local\fnm_multishells\20608_1792770741294\node.exe dist/server.js --release-dir P:\portfolio\cicd-pipeline\.releases\29e806527f5b5125519a15317587393c76fe0d51)
+==> demo: stopped WINPID 20588; port 8787 free after 1.496s
+==> demo: healthy release 29e806527f5b5125519a15317587393c76fe0d51
+==> current pointer: current.txt (native symlinks unavailable on this host)
+==> deploy.start 29e806527f5b5125519a15317587393c76fe0d51 (release 29e806527f5b5125519a15317587393c76fe0d51, dirty=1)
+==> build
+==> PREVIOUS_REF=.releases/29e806527f5b5125519a15317587393c76fe0d51
+==> built .releases/29e806527f5b5125519a15317587393c76fe0d51
+==> current -> .releases/29e806527f5b5125519a15317587393c76fe0d51
+service is not running (no pid file)
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51 (pid 3364) on 127.0.0.1:8787
+==> health.ok
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 8.9ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+==> smoke.ok
+release 29e806527f5b5125519a15317587393c76fe0d51 is live on http://127.0.0.1:8787
+
+==> demo: deliberately broken release 29e806527f5b5125519a15317587393c76fe0d51 (RELEASE_FAULT=invoices-500)
+==> current pointer: current.txt (native symlinks unavailable on this host)
+==> deploy.start 29e806527f5b5125519a15317587393c76fe0d51 (release 29e806527f5b5125519a15317587393c76fe0d51-broken, dirty=1)
+==> build
+==> injected deliberate fault: invoices-500
+==> PREVIOUS_REF=.releases/29e806527f5b5125519a15317587393c76fe0d51
+==> built .releases/29e806527f5b5125519a15317587393c76fe0d51-broken
+==> current -> .releases/29e806527f5b5125519a15317587393c76fe0d51-broken
+stopped WINPID 3364 after 100ms
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51-broken (pid 22116) on 127.0.0.1:8787
+==> health.ok
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51-broken)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+FAIL 3/5 POST /invoices authenticated — authenticated request returned 500, expected 201
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 8.0ms < 300ms (5 warm samples)
+smoke: FAIL (1 of 5 assertions)
+smoke gate failed
+==> rollback to .releases/29e806527f5b5125519a15317587393c76fe0d51
+stopped WINPID 22116 after 100ms
+started release .releases/29e806527f5b5125519a15317587393c76fe0d51 (pid 21004) on 127.0.0.1:8787
+smoke: http://127.0.0.1:8787 (release .releases/29e806527f5b5125519a15317587393c76fe0d51)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 8.0ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+rollback complete: .releases/29e806527f5b5125519a15317587393c76fe0d51 is live and passes smoke
+rolled back to .releases/29e806527f5b5125519a15317587393c76fe0d51 after smoke.fail
+
+demo summary
+step                      result       expected  elapsed
+------------------------  ----------   --------  -------
+release (healthy)         PASS         PASS      12s
+smoke (healthy)           PASS         PASS      5s
+release (broken)          PASS         PASS      15s
+smoke (broken)            FAIL         FAIL      5s
+rollback                  PASS         PASS      12s
+demo: service state - pid 21004 is the only listener on port 8787 and matches .deploy/service.pid
+demo: ok - rollback verified
+```
+
+## A foreign listener is refused, not killed
+
+Captured 2026-10-23; exit code: 1. The listener was started from `/tmp` (not this
+repository) so its command line does not name a release under
+`P:\portfolio\cicd-pipeline\.releases\`:
+
+```bash
+cd /tmp && node -e 'require("http").createServer((q,s)=>s.end("x")).listen(8787)'
+```
+
+then, in the repository:
+
+```bash
+PORT=8787 bash scripts/demo.sh
+```
+
+Output:
+
+```text
+demo: port 8787 is held by 10460 (C:\Users\interview\AppData\Local\fnm_multishells\20608_1792770741294\node.exe -e "require(\"http\").createServer((q,s)=>s.end(\"x\")).listen(8787)")
+```
+
+The demo did not build, did not print a summary, and exited 1. `netstat -ano`
+still showed `TCP 0.0.0.0:8787 ... LISTENING 10460` afterwards, so the foreign
+process was left untouched; it was then stopped by hand with
+`taskkill /PID 10460 /F /T`. The repository service was restarted with
+`bash scripts/service.sh start` (pid 17708 on 127.0.0.1:8787).
 
 ## `bash scripts/release-local.sh <sha>`
 

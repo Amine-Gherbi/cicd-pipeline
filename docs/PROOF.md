@@ -7,10 +7,13 @@ the evidence.
 
 Environment: Windows 11, Git Bash, Node v22.23.4, PostgreSQL 16.13 on
 `localhost:5433`, service on `127.0.0.1:8787`. `git remote -v` is empty.
-`docker info` fails with `Access is denied` on `//./pipe/docker_engine`.
+`docker info` reports server 28.1.1 (2026-10-23); the local image build and
+Trivy run are recorded in `docs/EVIDENCE.md` (`docs/evidence/image-size.txt`,
+`docs/evidence/trivy-after.txt`).
 
 Full commands and observations: [`docs/EVIDENCE.md`](EVIDENCE.md). This page is
-the index; `docs/PIPELINE.md` explains why each gate exists.
+the index; `docs/PIPELINE.md` explains why each gate exists. Captured local
+command transcripts are in [`docs/OUTPUT.md`](OUTPUT.md).
 
 ## Ran here — reproducible now
 

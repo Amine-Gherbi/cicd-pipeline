@@ -167,6 +167,18 @@ missed and the reason is recorded here rather than hidden behind a base-image
 change. Numbers: `docs/evidence/image-size.txt`. Trivy table:
 `docs/evidence/trivy-after.txt` (0 findings; no `.trivyignore` exists).
 
+### Command output card — 2026-10-23
+
+Rows appended for the documentation/output card. The tables above are unchanged.
+
+| Claim | Command | Observed |
+|---|---|---|
+| `verify.sh` prints four labelled sections and one result line | `bash scripts/verify.sh` | `==> lint`, `==> types`, `==> tests`, `==> result`, `verify: ok`; exit 0 on two consecutive runs |
+| the demo drives release, smoke pass, broken release, smoke fail and rollback | `bash scripts/demo.sh` | summary: `release (healthy) PASS`, `smoke (healthy) PASS`, `release (broken) PASS`, `smoke (broken) FAIL`, `rollback PASS`; exit 0 |
+| the demo's rollback order is in `deploy.log` | `grep -E '^(deploy\.start\|health\.ok\|smoke\.(ok\|fail)\|rollback\.)' deploy.log \| tail -6` | `deploy.start → health.ok → smoke.fail → rollback.start → rollback.health.ok → rollback.smoke.ok` |
+| the nine integration tests still pass | `bash scripts/verify.sh` | `Test Files 1 passed (1)`, `Tests 9 passed (9)`; exit 0 |
+| each documented command has a captured transcript | `docs/OUTPUT.md` | command, exit code and 2026-10-23 output for verify, demo, release, smoke, status, service, the destructive gate, migrate, tests, build, assets and the image listing |
+
 ## Unverified — needs a remote and/or Actions
 
 Every row below is `unverified`. No run, check, PR, attestation or registry
@@ -253,8 +265,9 @@ reads as a test. Here there is no run link, so the body says so.
   be a mock-up.
 - No GHCR push and no OIDC token, so no attestation and no `cosign verify`
   output.
-- No Docker daemon locally, so the `Dockerfile` added for the `image` job has
-  never been built here.
+- The Docker daemon was unavailable when this section was first written; it
+  came up on 2026-10-23 and the local image build and Trivy run above are the
+  result. Rows that need a remote or registry remain `unverified`.
 
 The locally verified table above is the complete set of claims this machine can
 support. Everything else is marked `unverified` on purpose.

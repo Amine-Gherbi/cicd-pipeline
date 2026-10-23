@@ -311,7 +311,23 @@ fs.writeFileSync(
   fi
 
   if [ -e "$rel_abs" ]; then
-    mv "$rel_abs" "$RELEASES_DIR/.replaced-$release_id-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    local replaced fresh
+    replaced="$RELEASES_DIR/.replaced-$release_id-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+    if mv "$rel_abs" "$replaced" 2>/dev/null; then
+      :
+    else
+      # A process still has this release directory as its cwd, so Windows
+      # refuses the move with "Device or resource busy". Do not fail the lane:
+      # build under a fresh release id instead.
+      fresh="$release_id-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+      while [ -e "$RELEASES_DIR/$fresh" ]; do
+        fresh="$fresh-1"
+      done
+      echo "==> $rel is busy (a process still holds it); building fresh release .releases/$fresh"
+      release_id="$fresh"
+      rel=".releases/$release_id"
+      rel_abs="$REPO_ROOT/$rel"
+    fi
   fi
   mv "$tmp" "$rel_abs"
   echo "==> built $rel"
@@ -355,6 +371,23 @@ fs.writeFileSync(
   return 1
 }
 
+# service.pid holds the listener's Windows PID (netstat/taskkill agree with it
+# and with the service's own log); `kill -0` only understands MSYS pids, so map
+# the WINPID through `ps -W` before testing it.
+pid_alive() {
+  local pid="$1" msys
+  [ -n "$pid" ] || return 1
+  case "$(uname -s 2>/dev/null)" in
+    MINGW* | MSYS* | CYGWIN*)
+      msys=$(ps -W 2>/dev/null | awk -v win="$pid" '$4 == win { print $1; exit }')
+      [ -n "$msys" ] || return 1
+      kill -0 "$msys" 2>/dev/null
+      return $?
+      ;;
+  esac
+  kill -0 "$pid" 2>/dev/null
+}
+
 status() {
   local current previous pid
 
@@ -369,7 +402,7 @@ status() {
 
   if [ -f "$STATE_DIR/service.pid" ]; then
     pid=$(cat "$STATE_DIR/service.pid" 2>/dev/null)
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    if [ -n "$pid" ] && pid_alive "$pid"; then
       echo "pid:      $pid (alive)"
     else
       echo "pid:      ${pid:-unknown} (not running)"
