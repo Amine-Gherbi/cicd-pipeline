@@ -1,0 +1,14 @@
+# docker C3 evidence  2026-10-23T08:33:27+01:00
+server : 28.1.1 / linux/x86_64
+client : 28.1.1
+image  : invoice-api:local 535MB 881604849cd3
+container ok v22.23.4
+run exit=0
+0B	CMD ["node" "dist/server.js"]
+0B	HEALTHCHECK {Test:[CMD-SHELL node -e "fetch(…
+0B	EXPOSE [8080/tcp]
+0B	USER node
+25.7kB	COPY /app/dist ./dist # buildkit
+77MB	COPY /app/node_modules/@prisma/client ./node…
+24.2MB	COPY /app/node_modules/.prisma ./node_module…
+206MB	RUN /bin/sh -c npm ci --omit=dev --ignore-sc…
