@@ -19,7 +19,7 @@ A delivery pipeline with gates that actually block: eight PR checks feed one req
 | `invoice-api` | Runs natively; 9 integration tests pass; `/health`, `/ready`, auth, validation and 404 shape proven | `bash scripts/verify.sh` |
 | Migration gate | Replayed against local PostgreSQL 16 with `PGOPTIONS` lock timeouts and a drift probe; proven locally, not in the Actions service container | `docs/EVIDENCE.md` |
 | Local release lane | Deployed, smoked 5/5, deliberately broken, rolled back, restarted, re-smoked; `deploy.log` records the order | `deploy.log`, `docs/ROLLBACK.md` |
-| Image lane (C3) | Image builds locally and the container starts (`container ok v22.23.4`, id `881604849cd3`); **535 MB against a 120 MB target**, and no Trivy/cosign/GHCR run | `docs/EVIDENCE.md`, `docs/evidence/docker-c3.txt` |
+| Image lane (C3) | Image builds and runs (`container ok v22.23.4`, id `881604849cd3`), **535 MB against a 120 MB target**, and Trivy finds **11 HIGH** so the gate would block it; no cosign/GHCR run | `docs/EVIDENCE.md`, `docs/evidence/` |
 | Promotion from P2 | Path documented with `cosign verify` + `gh attestation verify`; **not executed** — no registry credentials, no P2 run here | `docs/PIPELINE.md` |
 | Hub assets | 4 WebP at 2880×1800 plus `manifest.json`; accepted by the hub's `check:assets`. The hero is a labelled mock, not a screenshot. | `P:/portfolio/_shared/assets/cicd-pipeline/` |
 
@@ -99,9 +99,9 @@ there is no GitHub page to screenshot because there is no remote.
 
 - **No Actions run, no PR, no run URL.** The red-PR body is recorded as an
   unexecuted artifact in `docs/EVIDENCE.md`; a screenshot of it would be invented.
-- **No image scan, signature, attestation or GHCR push.** The image builds and runs locally
-  (2026-10-23, 535 MB), but Trivy, cosign, attestation and GHCR all need a registry and a
-  remote, so C3 is not claimed as done.
+- **The image would not pass its own Trivy gate.** It builds and runs locally (2026-10-23, 535 MB),
+  and a local Trivy scan reports **11 HIGH, 0 CRITICAL** with fixes available, so the CI gate
+  (`exit-code: '1'`) would stop it. Signature, attestation and GHCR push still need a remote.
 - **Local only.** `http://127.0.0.1:8787` is not reachable by a reviewer.
 - **Rollback is one release back**, and only when migrations followed
   expand/contract. It swaps code, not schema. See `docs/ROLLBACK.md`.
