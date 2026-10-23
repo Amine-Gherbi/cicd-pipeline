@@ -112,29 +112,60 @@ database was dropped afterwards. This proves the fixture and the commands on a
 real PostgreSQL 16; it does **not** prove the Actions service container behaves
 identically.
 
-### Local image build — measured 2026-10-23
+### Local image build — 535 MB → 284 MB, measured 2026-10-23
 
 The Docker engine came up on this machine (server 28.1.1, linux/amd64), so the
-Dockerfile was built for real rather than left as a claim:
+Dockerfile was built for real rather than left as a claim. The first build was
+535 MB and failed its own Trivy gate; the runtime was then slimmed and measured
+again.
 
-| Claim | Command | Observed |
+| Claim | before (`invoice-api:local`) | after (`invoice-api:slim`) |
 |---|---|---|
-| the image builds from this Dockerfile | `docker build -t invoice-api:local .` | built, image id `881604849cd3` |
-| the container starts and Node is present | `docker run --rm invoice-api:local node -e "console.log('container ok', process.version)"` | `container ok v22.23.4`, exit 0 |
-| image size | `docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}'` | **535 MB** — the plan's 120 MB target is **not met** |
-| where the size goes | `docker history invoice-api:local` | `npm ci --omit=dev` 206 MB, `@prisma/client` 77 MB, `.prisma` 24 MB, rest base image |
-| Trivy scan, CRITICAL/HIGH, fix available only | `trivy image --severity CRITICAL,HIGH --ignore-unfixed invoice-api:local` | **11 HIGH, 0 CRITICAL — the CI gate would FAIL** (`exit-code: '1'`) |
-| where the findings are | `trivy image --format json` → `evidence/trivy.json` | `brace-expansion` ×4, `picomatch`, `deepmerge-ts`, `sigstore`, all fixable by version bump |
+| the image builds from this Dockerfile | built, id `881604849cd3` | built, id `b9d3fbc0fddc` |
+| the container starts and Node is present | `container ok v22.23.4` | `v22.23.4` |
+| image size | **535 MB** | **284 MB** (120 MB target not reachable, see below) |
+| where the size goes | `npm ci --omit=dev` 206 MB, `@prisma/client` 77 MB, `.prisma` 24 MB, base `node:22-bookworm-slim` | `npm ci --omit=dev --omit=optional --omit=peer` 95.4 MB (72.9 MB of it `@prisma/client/runtime`), `.prisma` 20 MB, base `node:22-alpine` 168 MB |
+| Trivy, CRITICAL/HIGH, fix available only | **11 HIGH, 0 CRITICAL — the gate would FAIL** | **0 findings** |
+| where the findings were | `brace-expansion` ×5, `picomatch`, `deepmerge-ts`, `sigstore`, `pacote` ×2, `ip-address` | none |
 
-The 535 MB figure is reported, not excused: a slim runtime (alpine + pruned
-Prisma engines, or shipping `dist` and running `prisma generate` outside the
-image) is the obvious fix and is **not done**. Full log:
-`_orchestration/evidence/docker-c3.txt`, Trivy JSON: `_orchestration/evidence/trivy.json`.
+What changed, and why it is not a widened gate:
 
-The scan is the more useful finding: **the image as built would be blocked by its
-own Trivy gate** (11 HIGH with fixes available, largely transitive dev packages
-surviving `npm ci --omit=dev`). That is the gate working, not failing —
-`docs/PIPELINE.md` lists it as a gate precisely because it can stop a build.
+- `--omit=optional` is the lever. `@prisma/client` declares `prisma` and
+  `typescript` as **optional** peerDependencies; `npm ci --omit=dev` (and
+  `--omit=peer`) still installs them, pulling in `effect` and `fast-check`.
+  With `--omit=optional --omit=peer` all four are absent from the image
+  (verified inside it: `prisma`, `typescript`, `effect`, `fast-check`).
+- The install layer no longer copies `@prisma/client` a second time from the
+  build stage; only the generated `.prisma` client and its engine are copied.
+- `package-lock.json` is deleted after install. It is a build input, not
+  runtime data; the shipped `node_modules` is what Trivy should judge.
+- npm is deleted from the runtime image (`/usr/local/lib/node_modules/npm` and
+  its bin links). The entry point is `node dist/server.js`; npm's bundled
+  dependency tree was the source of every remaining HIGH finding, and none of
+  it is executable runtime code in this container.
+- `prisma/migrations` is now copied into the image. `/ready` compares applied
+  migrations against that directory; without it readiness is 503
+  `migrations_unreadable` (the old image had this defect, visible only once a
+  database was attached).
+
+The runtime was exercised against a real PostgreSQL 16 container:
+
+```
+docker run -d --network invoice-net -e DATABASE_URL=... -p 18080:8080 invoice-api:slim
+curl http://127.0.0.1:18080/health  → 200 {"status":"ok"}
+curl http://127.0.0.1:18080/ready   → 200 {"status":"ok","checks":{"database":"ok","migrations":"ok"}}
+```
+
+Why 284 MB and not ≤ 120 MB: `node:22-alpine` is 168 MB before any application
+code (node binary 130 MB). Prisma is **not** the blocker — the generated engine
+is `libquery_engine-linux-musl-openssl-3.0.x.so.node` and it runs, with `/ready`
+proving database access. 120 MB sits below the floor of the base image; the
+largest remaining app layer is 72.9 MB of `@prisma/client/runtime` (source maps
+and wasm builds for every database provider), which the app needs as shipped.
+The measured 284 MB satisfies the ≤ 300 MB fallback; the 120 MB target remains
+missed and the reason is recorded here rather than hidden behind a base-image
+change. Numbers: `docs/evidence/image-size.txt`. Trivy table:
+`docs/evidence/trivy-after.txt` (0 findings; no `.trivyignore` exists).
 
 ## Unverified — needs a remote and/or Actions
 
