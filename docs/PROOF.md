@@ -17,9 +17,13 @@ command transcripts are in [`docs/OUTPUT.md`](OUTPUT.md).
 
 ## Ran here — reproducible now
 
+Rows marked **re-run 2026-10-23** were re-executed in the P3-D2 truth pass.
+Every other number in this table was measured earlier on 2026-10-23 and is
+**historical**; the listed command reproduces it.
+
 | Claim | Command | Observed | Recorded in |
 |---|---|---|---|
-| The service passes lint, typecheck and 9/9 integration tests | `bash scripts/verify.sh` | `verify: ok`; 9 tests passed; exit 0 | `docs/evidence/verify.txt` |
+| The service passes lint, typecheck and 9/9 integration tests | `bash scripts/verify.sh` | re-run 2026-10-23: `verify: ok`; 9 tests passed; exit 0 | `docs/evidence/verify-2026-10-23.txt` |
 | The smoke gate names five behaviours and passes all five | `bash scripts/smoke.sh` | `PASS 1/5` … `PASS 5/5`; `/ready` p95 7.7 ms; exit 0 | `docs/evidence/smoke.txt` |
 | A release is deployed and the process is alive | `bash scripts/release-local.sh status` | `current: .releases/3b8fe59…`; `pid: 2547 (alive)` | `docs/evidence/release-status.txt` |
 | The rollback order is real, not asserted | `grep -nE '^(deploy\.start\|health\.ok\|smoke\.(ok\|fail)\|rollback\.)' deploy.log` | `deploy.start → health.ok → smoke.fail → rollback.start → rollback.health.ok → rollback.smoke.ok` | `deploy.log` |
@@ -33,6 +37,10 @@ command transcripts are in [`docs/OUTPUT.md`](OUTPUT.md).
 | `dist/` is inside its budget | `npm run build && du -sk dist` | `64 KiB` against `512 KiB` | `docs/evidence/bundle-size.txt` |
 | The Dockerfile is multi-stage, non-root, and has a healthcheck | `grep -nE '^(FROM\|USER\|HEALTHCHECK\|EXPOSE)' Dockerfile` | 2 `FROM`; `USER node`; `HEALTHCHECK`; `EXPOSE 8080` | `docs/evidence/dockerfile-structure.txt` |
 | The hub accepts the asset snapshot | `node scripts/capture-assets.mjs`, then the `check:assets` command below | `manifest valid, 4 shots present, 6 measurements and 3 invariants`; exit 0 | `docs/evidence/check-assets.txt` |
+| The image builds from this Dockerfile | `docker build -t invoice-api:slim .` | re-run 2026-10-23: exit 0 (all layers cached); `sha256:b9d3fbc0fddc…`; 284 MB | `docs/EVIDENCE.md` |
+| Trivy reports 0 CRITICAL/HIGH findings, counted from JSON | `docker run --rm -v //var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 --format json invoice-api:slim` | 2026-10-23: exit 0; 2 targets, 0 vulnerabilities in JSON | `docs/evidence/trivy-slim-2026-10-23.json` |
+| The image serves `/health` and `/ready` 200 against PostgreSQL 16.13 on port 5433 | `docker run … -p 18080:8080 invoice-api:slim`; `curl http://127.0.0.1:18080/health`, `…/ready` | 2026-10-23: 200 `{"status":"ok"}`; 200 `{"status":"ok","checks":{"database":"ok","migrations":"ok"}}` | `docs/EVIDENCE.md` |
+| A missing invoice returns the documented 404 body shape | `curl http://127.0.0.1:18080/invoices/123e4567-e89b-12d3-a456-426614174000` | 2026-10-23: 404 `{"error":{"code":"not_found","message":"Invoice not found"}}` | `docs/EVIDENCE.md` |
 
 ### The two commands that are not one-liners
 
@@ -79,9 +87,10 @@ service container behaves identically.
 
 ## Cannot run here — `unverified`
 
-No row below has output because no remote, registry credential or Docker daemon
-exists on this machine. Running a mock and calling it evidence is the failure
-this project is about.
+No row below has output because no remote or registry credential exists on this
+machine. Docker itself is available (28.1.1, re-checked 2026-10-23); the local
+image build, Trivy scan and container run are in the table above. Running a
+mock and calling it evidence is the failure this project is about.
 
 | Claim | Command that would prove it | Missing prerequisite |
 |---|---|---|
@@ -90,18 +99,15 @@ this project is about.
 | The ruleset requires exactly `ci-ok` | `gh api repos/<owner>/<repo>/branches/main/protection` (or the ruleset page) | settings live on GitHub |
 | A red PR cannot merge | `gh pr checks <n>`; `gh pr view <n> --json mergeStateStatus` → `BLOCKED` | no PR |
 | The red PR fails in `trivy`, not elsewhere | `gh run view <run-id> --log --job=trivy` | no run |
-| `docker build` produces the image | `docker build -t invoice-api:local .` | `docker info` → `Access is denied` |
-| Trivy scans the loaded image and exits 1 on a fixable HIGH/CRITICAL | `trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed invoice-api:<sha>` | no image, no Trivy run |
-| The image meets the size target | `docker buildx imagetools inspect ghcr.io/<owner>/invoice-api@sha256:<digest>` | no registry artifact |
+| The image meets the registry size target | `docker buildx imagetools inspect ghcr.io/<owner>/invoice-api@sha256:<digest>` | no registry artifact |
 | BuildKit cache helps | `grep -c CACHED build.log`; `gh api …/actions/caches` | no build log |
 | The signature verifies | `cosign verify ghcr.io/<owner>/invoice-api@sha256:<digest> …` | no signature, no GHCR |
 | Provenance verifies | `gh attestation verify oci://ghcr.io/<owner>/invoice-api@sha256:<digest> --repo <owner>/invoice-api` | no attestation |
-| P2's image is promotable | `cosign verify` + `gh attestation verify` (both in `PIPELINE.md`) | no P2 run, no credentials |
-| The attested P2 commit deploys locally | `./scripts/release-local.sh <sha>` in the P2 repository | no P2 checkout under test here |
 
 The release lane is not present in this repository yet: there is no
 `release.yml`, no registry push, and no OIDC token outside Actions. The
-`Dockerfile` is written for that runner and reviewed; it is **unverified here**.
+`Dockerfile` has been built and scanned locally (measured 2026-10-23); what
+remains unverified is the runner's build and the registry/attestation half.
 
 ## What no command on this machine can prove
 

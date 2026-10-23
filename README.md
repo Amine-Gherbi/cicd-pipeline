@@ -59,8 +59,7 @@ this Windows host excludes TCP 8001–8300, so the local lane uses 8787.
 | `invoice-api` | Runs natively; 9 integration tests pass; `/health`, `/ready`, auth, validation and 404 shape proven | `bash scripts/verify.sh` |
 | Migration gate | Replayed against local PostgreSQL 16 with `PGOPTIONS` lock timeouts and a drift probe; proven locally, not in the Actions service container | `docs/EVIDENCE.md` |
 | Local release lane | Deployed, smoked 5/5, deliberately broken, rolled back, restarted, re-smoked; `deploy.log` records the order | `deploy.log`, `docs/ROLLBACK.md` |
-| Image lane (C3) | Image builds and runs (`v22.23.4`, id `b9d3fbc0fddc`): **535 MB → 284 MB**, `/health` and `/ready` 200 against a real PostgreSQL 16, Trivy **11 HIGH → 0**; no cosign/GHCR run | `docs/EVIDENCE.md`, `docs/evidence/` |
-| Promotion from P2 | Path documented with `cosign verify` + `gh attestation verify`; **not executed** — no registry credentials, no P2 run here | `docs/PIPELINE.md` |
+| Image lane (C3) | Re-measured 2026-10-23: image builds (`v22.23.4`, id `b9d3fbc0fddc`), **284 MB**, `/health` and `/ready` 200 against PostgreSQL 16.13 on host 5433 (published on host 18080), Trivy **0 findings** counted from JSON. The earlier same-day history is **535 MB → 284 MB** and **11 HIGH → 0** (measured 2026-10-23, kept as historical); no cosign/GHCR run | `docs/EVIDENCE.md`, `docs/evidence/` |
 | Hub assets | 4 WebP at 2880×1800 plus `manifest.json`; accepted by the hub's `check:assets`. The hero is a labelled mock, not a screenshot. | `P:/portfolio/_shared/assets/cicd-pipeline/` |
 
 ## Manual release
@@ -113,8 +112,8 @@ build → Trivy → attest → GHCR     build → swap → wait → smoke → ro
 
 The CI lane cannot deploy: a runner cannot reach this machine, and there is no
 paid staging host (decision 2026-10-22). Neither lane stands in for the other.
-`docs/PIPELINE.md` explains the gate→why table, the single required check, the
-promotion path, and what the portable core is.
+`docs/PIPELINE.md` explains the gate→why table, the single required check, what
+this repository does and does not ship, and what the portable core is.
 
 ## Repository layout
 
@@ -122,7 +121,7 @@ promotion path, and what the portable core is.
 .github/workflows/pr.yml   8 gates → ci-ok (the only required status check)
 src/                       Fastify + Prisma invoice-api
 tests/integration/         9 integration tests (real PostgreSQL)
-Dockerfile                 multi-stage, non-root runtime; alpine, 535 MB → 284 MB
+Dockerfile                 multi-stage, non-root runtime; alpine, 284 MB (measured 2026-10-23)
 scripts/demo.sh            release → broken release → rollback, one command
 scripts/release-local.sh   build → swap → wait → smoke → rollback
 scripts/smoke.sh           5 named assertions

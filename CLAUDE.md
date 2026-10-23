@@ -1,12 +1,12 @@
 # cicd-pipeline (P3) — agent context
 
-Purpose: a delivery pipeline with real gates — a PR that cannot merge while red, reproducible builds, attested images in GHCR, a local release swap that waits for health, and a rollback that was actually recorded. Ships its own service (`invoice-api`) so the repo stands alone.
+Purpose: a delivery pipeline with real gates — a PR that cannot merge while red, reproducible builds, a local release swap that waits for health, and a rollback that was actually recorded. Ships its own service (`invoice-api`) so the repo stands alone. The PR lane is implemented; a tag/attest/GHCR release lane is a documented path only (there is no `release.yml` and no remote).
 
 ## Architecture
 - `invoice-api`: Fastify + TypeScript + Prisma + PostgreSQL 16, ~600 LOC, port 8080.
-- Two lanes, never conflated: a **CI lane** (build → Trivy → attest → push to GHCR) and a **local lane** (`release-local.sh`: build → swap → wait → smoke → rollback).
+- Two lanes, never conflated: a **CI lane** (build → Trivy, implemented in `pr.yml`; tag → image → attest → push is a documented path, not present here) and a **local lane** (`release-local.sh`: build → swap → wait → smoke → rollback).
 - `.github/workflows/pr.yml`: eight jobs (lint, typecheck, test, image, trivy, gitleaks, migration-gate, bundle-size) feeding one `ci-ok` aggregator — that exact string is the only required status check.
-- `.github/workflows/release.yml`: tag → image → attest → push in ONE workflow (tags created with `GITHUB_TOKEN` do not retrigger workflows).
+- `.github/workflows/` contains only `pr.yml`. There is no `release.yml`, no registry push and no attestation artifact; that path is described, not implemented.
 - Deployment is local by decision (no paid staging host): the runner cannot reach this machine.
 
 ## Commands
@@ -20,11 +20,11 @@ Purpose: a delivery pipeline with real gates — a PR that cannot merge while re
 3. Actions pinned to full commit SHAs; `permissions:` written explicitly on every workflow and job.
 4. Rollback only after `wait` proved health: `deploy.start → health.ok → smoke.* → rollback.start` order in `deploy.log` is the evidence.
 5. `PREVIOUS_REF` is captured before the swap, or the rollback has nowhere to go.
-6. Promotion is artifact-only: P3 verifies P2's published image (`cosign verify`, `gh attestation verify`); it never imports P2 code.
+6. P3 builds and scans its own service (`invoice-api`); it does not verify or ship P2's storefront image.
 7. No `continue-on-error`, no `|| true`, no `@master` on a scanner.
 
 ## Pitfalls
-- Docker daemon is unavailable on this machine (`docker info` → pipe access denied). Image work happens in Actions only; local builds are documented as unverified here.
+- Docker Desktop 28.1.1 is available on this machine (re-checked 2026-10-23). The local image build, Trivy scan and container run are measured; image work in Actions remains unexecuted (no remote).
 - `docker/build-push-action` without `load: true` leaves Trivy nothing to scan — the gate silently passes.
 - `prisma migrate deploy` opens its own session, so a prior `SET lock_timeout` does not apply: use `PGOPTIONS`.
 - Rollback must restart the service and re-run `wait` + `smoke`, otherwise "rolled back" means "swapped a symlink".
