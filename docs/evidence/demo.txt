@@ -1,0 +1,64 @@
+==> demo: stopping WINPID 30384 on port 8787 before building (its command line runs a release in this repo: C:\Users\interview\AppData\Roaming\fnm\node-versions\v22.23.4\installation\node.exe dist/server.js --release-dir P:\portfolio\cicd-pipeline\.releases\ecad7de62d3a78498d48f28d8fe74d0e6d2f188e)
+==> demo: stopped WINPID 30384; port 8787 free after 1.944s
+==> demo: healthy release 7580daaa33867aa781a9eae009b4f965adc7ef7c
+==> current pointer: current.txt (native symlinks unavailable on this host)
+==> deploy.start 7580daaa33867aa781a9eae009b4f965adc7ef7c (release 7580daaa33867aa781a9eae009b4f965adc7ef7c, dirty=1)
+==> build
+==> PREVIOUS_REF=.releases/ecad7de62d3a78498d48f28d8fe74d0e6d2f188e
+==> built .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c
+==> current -> .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c
+service is not running (no pid file)
+started release .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c (pid 34848) on 127.0.0.1:8787
+==> health.ok
+smoke: http://127.0.0.1:8787 (release .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 9.6ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+==> smoke.ok
+release 7580daaa33867aa781a9eae009b4f965adc7ef7c is live on http://127.0.0.1:8787
+
+==> demo: deliberately broken release 7580daaa33867aa781a9eae009b4f965adc7ef7c (RELEASE_FAULT=invoices-500)
+==> current pointer: current.txt (native symlinks unavailable on this host)
+==> deploy.start 7580daaa33867aa781a9eae009b4f965adc7ef7c (release 7580daaa33867aa781a9eae009b4f965adc7ef7c-broken, dirty=1)
+==> build
+==> injected deliberate fault: invoices-500
+==> PREVIOUS_REF=.releases/7580daaa33867aa781a9eae009b4f965adc7ef7c
+==> built .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c-broken
+==> current -> .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c-broken
+stopped WINPID 34848 after 100ms
+started release .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c-broken (pid 21600) on 127.0.0.1:8787
+==> health.ok
+smoke: http://127.0.0.1:8787 (release .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c-broken)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+FAIL 3/5 POST /invoices authenticated — authenticated request returned 500, expected 201
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 9.9ms < 300ms (5 warm samples)
+smoke: FAIL (1 of 5 assertions)
+smoke gate failed
+==> rollback to .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c
+stopped WINPID 21600 after 100ms
+started release .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c (pid 32508) on 127.0.0.1:8787
+smoke: http://127.0.0.1:8787 (release .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 23.1ms < 300ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+rollback complete: .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c is live and passes smoke
+rolled back to .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c after smoke.fail
+
+demo summary
+step                      result       expected  elapsed
+------------------------  ----------   --------  -------
+release (healthy)         PASS         PASS      15s
+smoke (healthy)           PASS         PASS      6s
+release (broken)          PASS         PASS      19s
+smoke (broken)            FAIL         FAIL      4s
+rollback                  PASS         PASS      19s
+demo: service state - pid 32508 is the only listener on port 8787 and matches .deploy/service.pid
+demo: ok - rollback verified

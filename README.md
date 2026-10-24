@@ -62,7 +62,7 @@ this Windows host excludes TCP 8001–8300, so the local lane uses 8787.
 | Migration gate | Replayed against local PostgreSQL 16 with `PGOPTIONS` lock timeouts and a drift probe; proven locally, not in the Actions service container | `docs/EVIDENCE.md` |
 | Local release lane | Deployed, smoked 5/5, deliberately broken, rolled back, restarted, re-smoked; `deploy.log` records the order | `deploy.log`, `docs/ROLLBACK.md` |
 | Image lane (C3) | Re-measured 2026-10-23: image builds (`v22.23.4`, id `b9d3fbc0fddc`), **284 MB**, `/health` and `/ready` 200 against PostgreSQL 16.13 on host 5433 (published on host 18080), Trivy **0 findings** counted from JSON. The earlier same-day history is **535 MB → 284 MB** and **11 HIGH → 0** (measured 2026-10-23, kept as historical); no cosign/GHCR run | `docs/EVIDENCE.md`, `docs/evidence/` |
-| Hub assets | 4 WebP at 2880×1800 plus `manifest.json`; accepted by the hub's `check:assets`. The hero is a labelled mock, not a screenshot. | `P:/portfolio/_shared/assets/cicd-pipeline/` |
+| Hub assets | 4 WebP at 2880×1800 plus `manifest.json`, captured from the local release lane, `verify.sh` and a local Trivy scan. The hero is a terminal transcript of `bash scripts/demo.sh`. | `P:/portfolio/_shared/assets/cicd-pipeline/` |
 
 ## Manual release
 
@@ -138,9 +138,12 @@ node scripts/capture-assets.mjs      # or ./scripts/capture-assets
 ```
 
 Writes `P:/portfolio/_shared/assets/cicd-pipeline/` (`hero.webp`, `shot-01..03.webp`,
-`manifest.json`, plus the proof transcripts). The hero is **a mock rendered from
-`.github/workflows/pr.yml`**, labelled on the image and in the manifest `alt`;
-there is no GitHub page to screenshot because there is no remote.
+`manifest.json`, plus the proof transcripts). The hero is a terminal transcript of
+`bash scripts/demo.sh` run on this machine: a healthy release, a deliberately broken
+release, and the rollback. `shot-01` is the rollback timeline read from `deploy.log`;
+`shot-02` is `bash scripts/verify.sh`; `shot-03` is a local `trivy image` scan of
+`invoice-api:slim`. The workflow file supplies the gate definitions; no hosted run
+is depicted.
 
 ## Limits, stated plainly
 
