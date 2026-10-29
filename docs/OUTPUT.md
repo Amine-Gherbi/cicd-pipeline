@@ -116,14 +116,17 @@ PASS 1/5 /health 200 {status:ok}
 PASS 2/5 /ready 200 database+ok migrations+ok
 PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
 PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
-PASS 5/5 /ready p95 382.8ms < 1000ms (5 warm samples)
+PASS 5/5 /ready p95 166.1ms < 1000ms (5 warm samples)
 smoke: ok (5 of 5 assertions)
 ```
 
 The 1000 ms budget applies only to a public URL; the local lane keeps 300 ms.
-The measured p95 is a fresh TLS connection per sample across the internet, not
-the local 300 ms budget being silently dropped — the printed line names the
-budget used.
+One curl sends all six requests, so the five samples share a TLS connection and
+the first (warm-up) transfer is discarded; without that, each sample would
+measure a fresh handshake across the internet rather than the service. The
+public budget is wider than 300 ms because a free instance and the public
+network still vary between samples, and the printed line names the budget used
+so the wider number is not hidden.
 
 ### Render deploy
 
