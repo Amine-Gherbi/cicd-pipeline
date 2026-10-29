@@ -9,6 +9,7 @@ were captured later at `29e806527f5b5125519a15317587393c76fe0d51`).
 Each block is a real run. ANSI colour escapes were removed from the two Vitest
 transcripts; the lines are otherwise exactly as printed. A block is trimmed
 only where it says so. `deploy.log` timestamps are UTC.
+The 2026-10-29 green-lane captures are in “Green-lane verification” below.
 
 ## `bash scripts/verify.sh`
 
@@ -777,10 +778,63 @@ invoice-api   slim      b9d3fbc0fddc   6 hours ago   284MB
 invoice-api   local     881604849cd3   8 hours ago   535MB
 ```
 
+## Green-lane verification — 2026-10-29
+
+Branch `w3-b1-green-lane`, based on
+`7fa7aa595d7d1ab5d32cbf62784e65ba8cac5977`. This card changes only
+`.github/workflows/pr.yml` and documentation, so the image below is the one the
+`image` and `publish` jobs build.
+
+### `bash scripts/verify.sh`
+
+Command:
+
+```bash
+bash scripts/verify.sh
+```
+
+Exit code: 0. Output trimmed to the section labels and the Vitest summary:
+
+```text
+==> lint
+==> types
+==> tests
+
+ Test Files  1 passed (1)
+      Tests  9 passed (9)
+
+==> result
+verify: ok
+```
+
+### `docker build` + the Trivy gate
+
+Commands:
+
+```bash
+SHA=$(git rev-parse HEAD)
+docker build -t "invoice-api:$SHA" .
+trivy image --exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed "invoice-api:$SHA"
+```
+
+Exit codes: build 0, scan 0. Docker 28.1.1; Trivy 0.76.1 with the vulnerability
+DB updated 2026-10-29. The JSON report contains 2 targets (alpine 3.24.3 and
+Node.js) and **0 CRITICAL, 0 HIGH findings**. The built image is
+`sha256:b9d3fbc0fddc854ada74f5bce7a419b13682dbd4eea99bda94881a1241e927b8`.
+
+### The green run
+
+Not yet observed: the supervisor merges the branch and dispatches `pr.yml` on
+`master`. Values stay as placeholders rather than invented numbers.
+
+- Run URL: `RUN_URL_TBD`
+- Pushed digest: `DIGEST_TBD`
+
 ## What is not here
 
-- No GitHub Actions output: `git remote -v` is empty, so no run exists.
+- No green Actions output yet. Run 40902199280 exists and is quoted in
+  `docs/EVIDENCE.md`; it failed in `trivy`. The green run is `RUN_URL_TBD`.
 - No `cosign verify` or `gh attestation verify` output: no registry artifact
-  exists.
+  exists yet. The pushed digest is `DIGEST_TBD`.
 - No `npm run dev` transcript: the command starts a watcher and does not exit;
   the captured service output comes from the built release above.

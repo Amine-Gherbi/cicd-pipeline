@@ -122,6 +122,11 @@ jobs:
 
   trivy:
     name: trivy
+    # The scan consumes the artifact the `image` job uploads. Without this edge
+    # both jobs start together, download-artifact runs before the upload exists,
+    # and the gate dies with "Artifact not found" even though the image built
+    # (run 40902199280). A missing dependency is not a scanner finding.
+    needs: [image]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -149,8 +154,47 @@ jobs:
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
           cache-dir: ~/.cache/trivy
-      - name: Upload the scan result even when the gate failed
-        if: always()
+      - name: Keep the SARIF report when the scanner produced one
+        # The gate is the scan step above. This preserves its report even when
+        # that step exited 1. No file means the scan never completed, and the
+        # failed step above already fails the job; do not add a second error.
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: trivy-results.sarif
+          path: trivy-results.sarif
+          retention-days: 1
+          if-no-files-found: error
+      - name: Check whether code scanning can accept the SARIF
+        # This private repository has code scanning disabled, so upload-sarif
+        # would fail with "Code scanning is not enabled" and turn a clean scan
+        # red. Probe first; the report is already kept as an artifact above.
+        id: code_scanning
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/code-scanning/alerts?per_page=1")
+          case "$status" in
+            200)
+              echo "enabled=true" >> "$GITHUB_OUTPUT"
+              echo "code scanning accepts SARIF"
+              ;;
+            403|404)
+              echo "enabled=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::code scanning is not enabled for ${GITHUB_REPOSITORY}; SARIF kept as the trivy-results.sarif artifact"
+              ;;
+            *)
+              echo "unexpected HTTP $status from the code-scanning API"
+              exit 1
+              ;;
+          esac
+      - name: Upload the scan result when code scanning is enabled
+        if: always() && steps.code_scanning.outputs.enabled == 'true' && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.39.1
         with:
           sarif_file: trivy-results.sarif
