@@ -22,6 +22,14 @@ port 5433 and was reachable for the migration test below.
 Fresh runs from 2026-10-23 are saved under `docs/evidence/`. `docs/PROOF.md`
 indexes every claim to its command; this file is the full observation log.
 
+## The three artefacts to click
+
+| Artefact | URL | What it shows |
+|---|---|---|
+| Green `master` run | <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40929181528> | All eight gates, `ci-ok`, `publish` (GHCR + keyless cosign) and `deploy` (Render + public smoke) green end to end. |
+| Red pull request | <https://github.com/Amine-Gherbi/cicd-pipeline/pull/2> | A draft PR whose `trivy` and `ci-ok` checks fail; `mergeable_state` is `blocked` by ruleset `main-protection`. Run: <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40931333527>. |
+| Demo page | <https://pipeline-demo-57mh.onrender.com> | Dispatches the gates, ships the bad image Trivy rejects, and rolls a faulty deploy back with the five smoke assertions. |
+
 ## GitHub Actions — first execution and the green-lane fix (2026-10-29)
 
 `origin` is `https://github.com/Amine-Gherbi/cicd-pipeline.git`, so Actions
@@ -70,8 +78,9 @@ The supervisor merged the branch and the workflow ran on `master`; run
 ## Hosted lane — Neon and Render (2026-10-29)
 
 The service now has a real target. These rows were measured on this machine
-before the `deploy` job could run in Actions; the job itself is unexecuted until
-the branch is merged and a master run starts.
+before the `deploy` job first ran in Actions; that run has since happened and is
+green (run 40929181528, `deploy` job 123643929562). The table below is kept as
+the pre-run baseline, not as a pending claim.
 
 | Claim | Command | Observed |
 |---|---|---|
@@ -365,20 +374,21 @@ Rows appended for the documentation/output card. The tables above are unchanged.
 | the nine integration tests still pass | `bash scripts/verify.sh` | `Test Files 1 passed (1)`, `Tests 9 passed (9)`; exit 0 |
 | each documented command has a captured transcript | `docs/OUTPUT.md` | command, exit code and 2026-10-23 output for verify, demo, release, smoke, status, service, the destructive gate, migrate, tests, build, assets and the image listing |
 
-## Unverified — needs a remote and/or Actions
+## Verification against GitHub Actions
 
-These rows began before the remote existed. Runs 40902199280 and 40905865091
-now answer the “workflow runs”, “image builds on the runner” and “green master”
-rows. The ruleset, red-PR and attestation rows still need a settings check or a
-run that has not happened.
+These rows began before the repository had an Actions lane. Runs 40902199280,
+40905865091, 40929181528 and the red-PR run 40931333527 now answer the
+workflow, ruleset, red-PR and deploy rows. The rows that remain `unverified`
+are the ones this repository still does not produce: attestation, a
+canary-secret PR, a BuildKit cache measurement and the size target.
 
-| Claim | Command that would prove it on a machine with a remote | Status |
+| Claim | Command that proves it | Status |
 |---|---|---|
 | the workflow runs at all | `gh workflow list`, then `gh run list --workflow=pr.yml` | `verified` — run 40902199280 executed on `master` |
-| all eight gates go green | `gh run view <run-id> --log` | `verified` on `master` — run 40905865091; a clean PR run is still unobserved |
-| `ci-ok` is the check the ruleset requires | `gh api repos/{owner}/{repo}/branches/main/protection` (or the ruleset page) | `unverified` |
-| a red PR cannot merge | `gh pr checks <n>` shows `ci-ok` failing, `gh pr view <n> --json mergeStateStatus` shows `BLOCKED` | `unverified` |
-| the red PR fails in the expected job | `gh pr checks <n>`; expected failing job is `trivy` (see below) | `unverified` |
+| all eight gates go green | `gh run view <run-id> --log` | `verified` on `master` — runs 40905865091 and 40929181528; the PR lane is observed red in run 40931333527 |
+| `ci-ok` is the check the ruleset requires | `gh api repos/Amine-Gherbi/cicd-pipeline/rulesets/26152163` | `verified` — ruleset `main-protection` (id 26152163) is active on `~DEFAULT_BRANCH`; its `required_status_checks` list contains exactly `{"context":"ci-ok"}` |
+| a red PR cannot merge | `gh pr checks 2`; `gh api repos/Amine-Gherbi/cicd-pipeline/pulls/2 --jq .mergeable_state` | `verified` — PR #2: `trivy` and `ci-ok` `fail`; `mergeable_state` `blocked`; `mergeStateStatus` `BLOCKED` |
+| the red PR fails in the expected job | `gh pr checks 2`; expected failing job is `trivy` (see below) | `verified` — `trivy` failed with exit 1 in run 40931333527; `image` passed |
 | the image builds on the runner | `gh run view <run-id> --log --job=image` | `verified` — `image` succeeded in run 40902199280 and 40905865091 |
 | Trivy scans the loaded image and keeps its report | `gh run view <run-id> --log --job=trivy` | `verified` scan on `master`; code scanning is disabled, so the SARIF is kept as the run artifact instead of uploaded |
 | BuildKit cache actually helps | `grep -c CACHED build.log`; `gh api repos/{owner}/{repo}/actions/caches` | `unverified` |
@@ -387,7 +397,7 @@ run that has not happened.
 | gitleaks blocks a committed secret | a second draft PR with a canary token; `gh pr checks <n>` | `unverified` |
 | image provenance verifies | `gh attestation verify oci://ghcr.io/{owner}/invoice-api@sha256:<digest> --repo {owner}/invoice-api` | `unverified` — no attestation artifact is produced |
 | keyless signature verifies | `cosign verify ghcr.io/{owner}/invoice-api@sha256:<digest>` | `verified in the publish job` — run 40905865091 published and verified digest `sha256:e45898df…b31da` |
-| the hosted `deploy` job goes green on `master` | `gh run view <run-id> --log --job=deploy`; run summary shows the deploy id and public URL | `unverified` — the job exists and parses; it first runs after this branch is merged |
+| the hosted `deploy` job goes green on `master` | `gh run view 40929181528 --log --job=deploy`; run summary shows the deploy id and public URL | `verified` — run 40929181528: `deploy` success (job 123643929562), after `publish` and the eight gates |
 
 The attestation and signature rows are about `invoice-api` only. This
 repository does not verify or ship the P2 storefront image: that image was
@@ -396,67 +406,47 @@ rebuilt independently and is not an input to this pipeline. There is no
 job. No attestation artifact is produced, so the provenance row stays
 unverified.
 
-## The red PR — exact body, still unexecuted
+## The red PR — open, red, and blocked
 
-A remote now exists, but no red PR has been opened: the first run came from the
-merge push. What would be opened — and what it must prove — is fixed below.
+The red PR is real and still open. It is a draft; it is evidence and must not be
+merged.
 
-```text
-Title:  [DEMO] expected failure — trivy image (CVE-2021-23337)
-State:  draft
-Base:   master
-Branch: demo/trivy-cve-2021-23337
-Change: add lodash@4.17.20 to dependencies and import it once in src/app.ts
+- PR: <https://github.com/Amine-Gherbi/cicd-pipeline/pull/2>
+- Branch: `w3-b2b-red-pr-dockerfile` off `master`, commit
+  `138645922d91e5172291acd69ea4bddbc8f21c60`
+- Change: the runtime stage of `Dockerfile` goes from `node:22-alpine` to
+  `node:18.12.0-alpine@sha256:1f09c210…052996` (alpine 3.16.2). The build stage
+  stays on Node 22, so the application still compiles; the image that would
+  ship sits on the outdated base.
+- Run: <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40931333527>
+- Failing job: `trivy` — exit 1 with 10 fixable HIGH: `libssl1.1` and
+  `libcrypto1.1` (CVE-2022-4450, CVE-2023-0215, CVE-2023-0286, CVE-2023-0464)
+  and `musl` / `musl-utils` (CVE-2025-26519). The findings are in the alpine
+  base, so deleting npm from the runtime stage does not clear them.
+- Failing required check: `ci-ok` —
+  <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40931333527/job/123651396633>
+- Passing jobs: `lint`, `typecheck`, `test (22)`, `image`, `gitleaks`,
+  `migration-gate`, `bundle-size`.
+- `gh api repos/Amine-Gherbi/cicd-pipeline/pulls/2 --jq .mergeable_state` →
+  `blocked`; `gh pr view 2 --json mergeStateStatus` → `BLOCKED`. Not `clean`.
 
-This draft PR exists to prove the image gate can fail, not just run.
+The draft is intentional: a failing PR left open without a reason reads as
+neglect; a draft with an expected-failure body and a run link reads as a test.
 
-lodash 4.17.20 carries CVE-2021-23337 (command injection, HIGH).
-The image job builds normally; the trivy job scans the loaded image with
-severity CRITICAL,HIGH and exit-code 1, finds the fixable advisory, and
-fails. ci-ok aggregates that failure and is red, so the required check
-blocks the merge.
+## What the pre-remote history ruled out — and what still is not claimed
 
-Expected failing job: trivy
-Expected passing jobs: lint, typecheck, test, image, gitleaks,
-                       migration-gate, bundle-size
-Expected check: ci-ok — failure
-Expected merge state: BLOCKED
+Before 2026-10-29 the repository had no Actions lane, so no run, PR, GHCR push,
+OIDC token or signature could exist. That is history now: runs 40902199280,
+40905865091 and 40929181528 executed, the last of them green end to end
+including `deploy`, and the `publish` job signed digest
+`sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`.
+The red PR above is the pull-request lane's counter-example. These limits
+remain:
 
-Run link: none yet. This draft has not been opened; the only run so far is the
-green-lane run, not a red PR. Recorded as unverified in docs/EVIDENCE.md.
-```
-
-Commands that would produce the evidence on a machine with a remote:
-
-```bash
-git push -u origin demo/trivy-cve-2021-23337
-gh pr create --draft \
-  --title '[DEMO] expected failure — trivy image (CVE-2021-23337)' \
-  --body-file <the block above>
-gh pr checks <n>                       # trivy failed, ci-ok failed
-gh pr view <n> --json mergeStateStatus # BLOCKED
-gh run view <run-id> --log --job=trivy # CVE-2021-23337, exit 1
-```
-
-Status: `unverified`. The draft is intentional: a failing PR left open without
-a reason reads as neglect; a draft with an expected-failure body and a run link
-reads as a test. Here there is no run link, so the body says so.
-
-## What the pre-remote state ruled out
-
-Before 2026-10-29 there was no remote, so no Actions run, PR, GHCR push, OIDC
-token or signature could exist. That is history now: runs 40902199280 and
-40905865091 executed, and the second published digest
-`sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da` and
-verified its keyless signature in the `publish` job. These limits remain:
-
-- No PR has been opened, so there is no `gh pr checks` output and no red check
-  page. A screenshot would be a mock-up.
 - No attestation artifact is produced, so `gh attestation verify` has nothing
   to read. The signature is produced and verified; provenance is not.
-- The hosted `deploy` job has not run inside Actions yet. The target, schema,
-  deploy id and public smoke are verified above; the job's first master run is
-  the supervisor's confirmation.
+- BuildKit cache effectiveness, the 120 MB size target and a canary-secret
+  gitleaks PR are still unmeasured or unopened; those rows stay `unverified`.
 - The Docker daemon was unavailable when this section was first written; it
   came up on 2026-10-23 and the local image build and Trivy run above are the
   result.
