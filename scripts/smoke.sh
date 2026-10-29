@@ -160,27 +160,37 @@ else
 fi
 
 # 5. p95 < 300 ms over 5 warm samples after one warm-up.
-# The local budget is 300 ms. A public URL is measured across the internet, and
-# a fresh TLS connection per sample adds the round trip; the hosted budget is
-# 1000 ms so the assertion still fails a service that stops answering promptly,
-# without failing on distance. The budget is printed, never silently dropped.
+# One curl invocation is used so the five samples share the TLS connection;
+# otherwise each fresh handshake measures the internet, not the service. The
+# first transfer is the warm-up and is discarded. The local budget is 300 ms; a
+# public URL gets 1000 ms because the request crosses the internet to a free
+# instance, and the budget used is printed rather than silently dropped.
 LATENCY_BUDGET_MS=300
 if [ "$RELEASE_LABEL" = "remote" ]; then
   LATENCY_BUDGET_MS=1000
 fi
-latency_out="$TMP_DIR/.latency.$$"
-curl -s -o "$latency_out" "$BASE/ready" 2>/dev/null
-samples=""
-latency_ok=1
-for _ in 1 2 3 4 5; do
-  t=$(curl -s -o "$latency_out" -w '%{time_total}' "$BASE/ready" 2>/dev/null)
-  if [ -z "$t" ]; then
-    latency_ok=0
-    break
-  fi
-  samples="$samples $t"
-done
+# Repo-relative: Windows curl can fail with CURLE_WRITE_ERROR (23) when the
+# same MSYS absolute path is used for repeated -o targets.
+latency_out=".deploy/.latency.$$"
+timings=$(curl -s -w '%{time_total}\n' \
+  -o "$latency_out" -o "$latency_out" -o "$latency_out" \
+  -o "$latency_out" -o "$latency_out" -o "$latency_out" \
+  "$BASE/ready" "$BASE/ready" "$BASE/ready" "$BASE/ready" "$BASE/ready" "$BASE/ready" 2>/dev/null)
+curl_rc=$?
+samples=$(printf '%s\n' "$timings" | node -e '
+let d = "";
+process.stdin.on("data", (c) => (d += c)).on("end", () => {
+  const values = d.trim().split(/\s+/).slice(1, 6);
+  process.stdout.write(values.join(" "));
+});
+')
+sample_count=$(printf '%s\n' "$samples" | wc -w | tr -d ' ')
 rm -f "$latency_out"
+if [ "$curl_rc" -eq 0 ] && [ "$sample_count" -eq 5 ]; then
+  latency_ok=1
+else
+  latency_ok=0
+fi
 
 if [ "$latency_ok" -eq 1 ]; then
   p95=$(node -e '
