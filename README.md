@@ -1,6 +1,6 @@
 # cicd-pipeline
 
-**Case study:** https://gherbi.pages.dev/projects/cicd-pipeline/ — the release lane runs locally; the GitHub Actions lane has not run (see *Status*).
+**Case study:** https://gherbi.pages.dev/projects/cicd-pipeline/ — the release lane runs locally, and the GitHub Actions lane runs on every push and pull request: run 40929181528 is green end to end on `master`, and the `main-protection` ruleset requires the literal `ci-ok` check.
 
 **Demo page:** <https://pipeline-demo-57mh.onrender.com> — one screen, three
 real actions: dispatch the gates, ship a bad image that Trivy must reject, and
@@ -61,7 +61,7 @@ this Windows host excludes TCP 8001–8300, so the local lane uses 8787.
 
 | Lane | Status on this machine | Evidence |
 |---|---|---|
-| PR gates (`pr.yml`) | Runs on GitHub Actions. Run 40905865091 is green on `master`; the required check is the literal `ci-ok`. | `docs/EVIDENCE.md`, `docs/PIPELINE.md` |
+| PR gates (`pr.yml`) | Runs on GitHub Actions. Run 40929181528 is green end to end on `master` (eight gates, `ci-ok`, `publish`, `deploy`); ruleset `main-protection` requires the literal `ci-ok`. | `docs/EVIDENCE.md`, `docs/PIPELINE.md` |
 | Hosted service | `invoice-api` is live at <https://invoice-api-26b4.onrender.com> (Render, free, Frankfurt), backed by Neon database `invoice`; public smoke is 5/5 | `docs/OUTPUT.md`, `docs/EVIDENCE.md` |
 | `invoice-api` | Runs natively; 9 integration tests pass; `/health`, `/ready`, auth, validation and 404 shape proven | `bash scripts/verify.sh` |
 | Migration gate | Replayed against local PostgreSQL 16 with `PGOPTIONS` lock timeouts and a drift probe; proven locally, not in the Actions service container | `docs/EVIDENCE.md` |
@@ -153,18 +153,22 @@ Writes `P:/portfolio/_shared/assets/cicd-pipeline/` (`hero.webp`, `shot-01..03.w
 `bash scripts/demo.sh` run on this machine: a healthy release, a deliberately broken
 release, and the rollback. `shot-01` is the rollback timeline read from `deploy.log`;
 `shot-02` is `bash scripts/verify.sh`; `shot-03` is a local `trivy image` scan of
-`invoice-api:slim`. The workflow file supplies the gate definitions; no hosted run
-is depicted.
+`invoice-api:slim`. The workflow file supplies the gate definitions; the
+captured assets show the local lane, while the hosted runs are linked under
+*Limits, stated plainly*.
 
 ## Limits, stated plainly
 
-- **No red PR yet.** The red-PR body is recorded as an unexecuted artifact in
-  `docs/EVIDENCE.md`; a screenshot of it would be invented. The green master
-  run and its digest are real (run 40905865091).
-- **The hosted `deploy` job is not yet observed in Actions.** It exists in
-  `pr.yml`, is `master`-only and bounded, and its target, database, deploy id
-  and public smoke are verified from this machine. Its first master run after
-  merge is the remaining confirmation.
+- **The red PR is open, red, and blocked.** PR
+  <https://github.com/Amine-Gherbi/cicd-pipeline/pull/2> is a draft that pins
+  the runtime base to `node:18.12.0-alpine` (alpine 3.16.2, 10 fixable HIGH).
+  `trivy` and `ci-ok` fail in
+  <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40931333527>, and
+  `mergeable_state` is `blocked`. It is evidence, not a change to merge.
+- **The hosted `deploy` job is green in Actions.** Run
+  <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40929181528>
+  runs the eight gates, `ci-ok`, `publish` (GHCR + cosign) and `deploy`
+  (Render + public smoke) end to end on `master`.
 - **The image is 284 MB, not the 120 MB target.** It builds and runs locally
   (2026-10-23, `node:22-alpine`, `/health` and `/ready` 200 against a real PostgreSQL 16).
   Dropping the Prisma CLI, `effect`, `typescript`, `fast-check`, npm and the shipped

@@ -101,27 +101,25 @@ public smoke passes 5/5 from this machine. Commands and output:
 
 | Claim | Command that proves it | Status |
 |---|---|---|
-| Actions executes the workflow | `gh run list --workflow=pr.yml` | `verified` — run 40902199280 |
-| All eight gates go green | `gh run view 40905865091 --log` | `verified` on `master`; a clean PR run is unobserved |
-| The ruleset requires exactly `ci-ok` | `gh api repos/<owner>/<repo>/branches/master/protection` | `unverified` — settings live on GitHub |
-| A red PR cannot merge | `gh pr checks <n>`; `gh pr view <n> --json mergeStateStatus` | `unverified` — no PR opened |
-| The red PR fails in `trivy`, not elsewhere | `gh run view <run-id> --log --job=trivy` | `unverified` — no PR opened |
+| Actions executes the workflow | `gh run list --workflow=pr.yml` | `verified` — runs 40902199280 and 40929181528 |
+| All eight gates go green | `gh run view 40929181528 --log` | `verified` on `master` — runs 40905865091 and 40929181528; the PR lane is observed red in run 40931333527 |
+| The ruleset requires exactly `ci-ok` | `gh api repos/Amine-Gherbi/cicd-pipeline/rulesets/26152163` | `verified` — ruleset `main-protection` (id 26152163), required context `ci-ok` |
+| A red PR cannot merge | `gh pr checks 2`; `gh api repos/Amine-Gherbi/cicd-pipeline/pulls/2 --jq .mergeable_state` | `verified` — PR #2, `ci-ok` failing, `mergeable_state` `blocked` |
+| The red PR fails in `trivy`, not elsewhere | `gh run view 40931333527 --log --job=trivy` | `verified` — `trivy` exit 1, 10 fixable HIGH; `image` passed |
 | The registry digest exists | `docker buildx imagetools inspect ghcr.io/amine-gherbi/invoice-api:sha-<sha>` | `verified` by the `publish` job in run 40905865091 |
 | The signature verifies | `cosign verify ghcr.io/amine-gherbi/invoice-api@sha256:…` | `verified in the publish job`; no separate transcript here |
 | Provenance verifies | `gh attestation verify oci://ghcr.io/…` | `unverified` — no attestation artifact |
-| The hosted deploy job goes green | `gh run view <run-id> --log --job=deploy` | `unverified` — first runs after this branch merges |
+| The hosted deploy job goes green | `gh run view 40929181528 --log --job=deploy` | `verified` — run 40929181528, `deploy` success (job 123643929562) |
 | Public smoke passes | `bash scripts/smoke.sh https://invoice-api-26b4.onrender.com` | `verified` — 5/5 on 2026-10-29 |
 
 ## What no command on this machine can prove
 
-- That the hosted `deploy` job passes inside Actions. The job exists and parses;
-  its first master run is the remaining observation.
 - That the local lane deploys the registry digest. It builds from source. The
   hosted lane asks Render to build the same commit, and `commitId` binds the
   deploy to that commit; it does not pull the GHCR digest either.
 - That the Actions PostgreSQL service container behaves like the local
   PostgreSQL 16. The migration replay narrows the gap; it does not close it.
-- That a red PR blocks a merge. No red PR has been opened yet.
+- That image provenance verifies: no attestation artifact is produced.
 
 ## The single check to run first
 

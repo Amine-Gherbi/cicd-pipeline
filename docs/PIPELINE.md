@@ -9,7 +9,8 @@ must pass before it can merge, and the two jobs that run only after them on
 
 Seven gate jobs start in parallel. `trivy` is the exception: it consumes the
 image artifact, so it waits for `image`. None of them is a required status
-check. The ruleset requires exactly one string: **`ci-ok`**.
+check. The live ruleset `main-protection` (id 26152163) requires exactly one
+string: **`ci-ok`**, plus a pull request before merging.
 
 ```text
 lint ─────────────┐
@@ -240,6 +241,13 @@ describing them. Render service `srv-dbhofsbbc2fs73f0rg0g`, health `/health`.
 `demo.yml` mirrors the eight gate names for the green path. It does not replace
 `pr.yml`: the required status check is still the literal `ci-ok` produced by
 `pr.yml`, and `demo.yml` has `permissions: {}` and `concurrency: pipeline-demo`.
+
+The ruleset is not a diagram: `main-protection` (id 26152163) is active on the
+default branch and requires `ci-ok`. The proof is a red draft PR
+(<https://github.com/Amine-Gherbi/cicd-pipeline/pull/2>) whose `trivy` and
+`ci-ok` checks fail in
+<https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40931333527>;
+`mergeable_state` is `blocked`. See `docs/EVIDENCE.md`.
 
 The bad-image path is a real scanner failure, not a scripted `exit 1`. The
 Dockerfile starts from
