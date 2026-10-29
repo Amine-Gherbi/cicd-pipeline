@@ -64,8 +64,8 @@ code, so the image is the one the `image` and `publish` jobs build.
 The supervisor merges the branch and dispatches `pr.yml` on `master`. The first
 green run and its digest are placeholders until observed:
 
-- Green run URL: `RUN_URL_TBD`
-- Pushed digest: `DIGEST_TBD`
+- Green run URL: `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`
+- Pushed digest: `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`
 
 ## Verified locally
 
@@ -341,7 +341,7 @@ registry rows remain unverified until the supervisor's dispatch.
 | Claim | Command that would prove it on a machine with a remote | Status |
 |---|---|---|
 | the workflow runs at all | `gh workflow list`, then `gh run list --workflow=pr.yml` | `verified` — run 40902199280 executed on `master` |
-| all eight jobs go green on a clean PR | `gh run view <run-id> --log` | `unverified` — the first run had seven green and `trivy` red; green run `RUN_URL_TBD` |
+| all eight jobs go green on a clean PR | `gh run view <run-id> --log` | `unverified` — the first run had seven green and `trivy` red; green run `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091` |
 | `ci-ok` is the check the ruleset requires | `gh api repos/{owner}/{repo}/branches/main/protection` (or the ruleset page) | `unverified` |
 | a red PR cannot merge | `gh pr checks <n>` shows `ci-ok` failing, `gh pr view <n> --json mergeStateStatus` shows `BLOCKED` | `unverified` |
 | the red PR fails in the expected job | `gh pr checks <n>`; expected failing job is `trivy` (see below) | `unverified` |
@@ -414,7 +414,7 @@ answers the first bullet; the others remain true of the current state:
 
 - Actions ran, but `trivy` failed on a missing artifact and `publish` was
   skipped, so no green check or pushed digest exists yet. Green run
-  `RUN_URL_TBD`; digest `DIGEST_TBD`.
+  `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`; digest `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`.
 - No PR has been opened, so there is no `gh pr checks` output and no red check
   page. A screenshot would be a mock-up.
 - No GHCR push and no OIDC token have completed, so no attestation and no

@@ -827,14 +827,14 @@ Node.js) and **0 CRITICAL, 0 HIGH findings**. The built image is
 Not yet observed: the supervisor merges the branch and dispatches `pr.yml` on
 `master`. Values stay as placeholders rather than invented numbers.
 
-- Run URL: `RUN_URL_TBD`
-- Pushed digest: `DIGEST_TBD`
+- Run URL: `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`
+- Pushed digest: `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`
 
 ## What is not here
 
 - No green Actions output yet. Run 40902199280 exists and is quoted in
-  `docs/EVIDENCE.md`; it failed in `trivy`. The green run is `RUN_URL_TBD`.
+  `docs/EVIDENCE.md`; it failed in `trivy`. The green run is `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`.
 - No `cosign verify` or `gh attestation verify` output: no registry artifact
-  exists yet. The pushed digest is `DIGEST_TBD`.
+  exists yet. The pushed digest is `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`.
 - No `npm run dev` transcript: the command starts a watcher and does not exit;
   the captured service output comes from the built release above.
