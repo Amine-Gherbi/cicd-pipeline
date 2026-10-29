@@ -57,11 +57,12 @@ this Windows host excludes TCP 8001–8300, so the local lane uses 8787.
 
 | Lane | Status on this machine | Evidence |
 |---|---|---|
-| PR gates (`pr.yml`) | Written; YAML parses; jobs, `ci-ok`, SHA pinning and Trivy flags checked structurally. Never executed. | `docs/EVIDENCE.md`, `docs/PROOF.md` |
+| PR gates (`pr.yml`) | Runs on GitHub Actions. Run 40905865091 is green on `master`; the required check is the literal `ci-ok`. | `docs/EVIDENCE.md`, `docs/PIPELINE.md` |
+| Hosted service | `invoice-api` is live at <https://invoice-api-26b4.onrender.com> (Render, free, Frankfurt), backed by Neon database `invoice`; public smoke is 5/5 | `docs/OUTPUT.md`, `docs/EVIDENCE.md` |
 | `invoice-api` | Runs natively; 9 integration tests pass; `/health`, `/ready`, auth, validation and 404 shape proven | `bash scripts/verify.sh` |
 | Migration gate | Replayed against local PostgreSQL 16 with `PGOPTIONS` lock timeouts and a drift probe; proven locally, not in the Actions service container | `docs/EVIDENCE.md` |
 | Local release lane | Deployed, smoked 5/5, deliberately broken, rolled back, restarted, re-smoked; `deploy.log` records the order | `deploy.log`, `docs/ROLLBACK.md` |
-| Image lane (C3) | Re-measured 2026-10-23: image builds (`v22.23.4`, id `b9d3fbc0fddc`), **284 MB**, `/health` and `/ready` 200 against PostgreSQL 16.13 on host 5433 (published on host 18080), Trivy **0 findings** counted from JSON. The earlier same-day history is **535 MB → 284 MB** and **11 HIGH → 0** (measured 2026-10-23, kept as historical); no cosign/GHCR run | `docs/EVIDENCE.md`, `docs/evidence/` |
+| Image lane (C3) | Re-measured 2026-10-23: image builds (`v22.23.4`, id `b9d3fbc0fddc`), **284 MB**, `/health` and `/ready` 200 against PostgreSQL 16.13 on host 5433 (published on host 18080), Trivy **0 findings** counted from JSON. The earlier same-day history is **535 MB → 284 MB** and **11 HIGH → 0** (measured 2026-10-23, kept as historical). Run 40905865091 pushed and keyless-signed digest `sha256:e45898df…b31da`. | `docs/EVIDENCE.md`, `docs/evidence/` |
 | Hub assets | 4 WebP at 2880×1800 plus `manifest.json`, captured from the local release lane, `verify.sh` and a local Trivy scan. The hero is a terminal transcript of `bash scripts/demo.sh`. | `P:/portfolio/_shared/assets/cicd-pipeline/` |
 
 ## Manual release
@@ -107,20 +108,23 @@ printing. The truth is `deploy.log`, not the console.
 ## Two lanes, never conflated
 
 ```
-CI lane (GitHub Actions only)     local lane (this machine)
-build → Trivy → attest → GHCR     build → swap → wait → smoke → rollback
-  cosign path, not run here       recorded in deploy.log
+CI lane (GitHub Actions)                    local lane (this machine)
+gates → publish → deploy (master only)      build → swap → wait → smoke → rollback
+GHCR + cosign → Render public URL           recorded in deploy.log
 ```
 
-The CI lane cannot deploy: a runner cannot reach this machine, and there is no
-paid staging host (decision 2026-10-22). Neither lane stands in for the other.
-`docs/PIPELINE.md` explains the gate→why table, the single required check, what
-this repository does and does not ship, and what the portable core is.
+The CI lane no longer stops at the gate: on `master`, `publish` pushes and
+keyless-signs the image, and `deploy` asks Render for the same commit, waits for
+`/health`, and runs the five smoke assertions against the public URL. The
+runner still cannot reach this machine, so the local lane remains the proof of
+the swap/wait/smoke/rollback state machine. Neither lane stands in for the
+other. `docs/PIPELINE.md` explains the gate→why table, the single required
+check, the hosted deploy lane, and what the repository does and does not ship.
 
 ## Repository layout
 
 ```
-.github/workflows/pr.yml   8 gates → ci-ok (the only required status check)
+.github/workflows/pr.yml   8 gates → ci-ok; publish → deploy on master
 src/                       Fastify + Prisma invoice-api
 tests/integration/         9 integration tests (real PostgreSQL)
 Dockerfile                 multi-stage, non-root runtime; alpine, 284 MB (measured 2026-10-23)
@@ -147,14 +151,22 @@ is depicted.
 
 ## Limits, stated plainly
 
-- **No Actions run, no PR, no run URL.** The red-PR body is recorded as an
-  unexecuted artifact in `docs/EVIDENCE.md`; a screenshot of it would be invented.
+- **No red PR yet.** The red-PR body is recorded as an unexecuted artifact in
+  `docs/EVIDENCE.md`; a screenshot of it would be invented. The green master
+  run and its digest are real (run 40905865091).
+- **The hosted `deploy` job is not yet observed in Actions.** It exists in
+  `pr.yml`, is `master`-only and bounded, and its target, database, deploy id
+  and public smoke are verified from this machine. Its first master run after
+  merge is the remaining confirmation.
 - **The image is 284 MB, not the 120 MB target.** It builds and runs locally
   (2026-10-23, `node:22-alpine`, `/health` and `/ready` 200 against a real PostgreSQL 16).
   Dropping the Prisma CLI, `effect`, `typescript`, `fast-check`, npm and the shipped
   lockfile took it from **535 MB to 284 MB** and from **11 HIGH Trivy findings to 0**; the
   remaining gap to 120 MB is the 168 MB alpine base image, documented in `docs/EVIDENCE.md`.
-  Signature, attestation and GHCR push still need a remote.
-- **Local only.** `http://127.0.0.1:8787` is not reachable by a reviewer.
+  Run 40905865091 pushed and keyless-signed the digest; no attestation artifact
+  is produced.
+- **The public URL is real; the local lane is still local.**
+  <https://invoice-api-26b4.onrender.com> is reachable by a reviewer. The local
+  release lane on `127.0.0.1:8787` stays the rollback proof.
 - **Rollback is one release back**, and only when migrations followed
   expand/contract. It swaps code, not schema. See `docs/ROLLBACK.md`.

@@ -10,6 +10,141 @@ Each block is a real run. ANSI colour escapes were removed from the two Vitest
 transcripts; the lines are otherwise exactly as printed. A block is trimmed
 only where it says so. `deploy.log` timestamps are UTC.
 The 2026-10-29 green-lane captures are in “Green-lane verification” below.
+The hosted-lane captures (Neon, Render, public smoke) are in “Hosted lane —
+2026-10-29”.
+
+## Hosted lane — 2026-10-29
+
+Neon: project `ep-autumn-glitter-b9vtz0q5`, database `invoice`, owner
+`neondb_owner`. The connection string appears as `$INVOICE_URL`; the password is
+not recorded in this file. The existing `neondb` and `docqa` databases were not
+modified.
+
+### Tables in the Neon `invoice` database
+
+Command:
+
+```bash
+PGPORT=5432 PGCONNECT_TIMEOUT=15 psql -X -w -A -t -v ON_ERROR_STOP=1 \
+  -c "select table_name from information_schema.tables where table_schema='public' order by table_name;" \
+  "$INVOICE_URL"
+```
+
+Exit code: 0. Output:
+
+```text
+_prisma_migrations
+invoices
+```
+
+The migration row:
+
+```bash
+psql ... -c "select migration_name || '|' || (finished_at is not null) from _prisma_migrations;" "$INVOICE_URL"
+```
+
+```text
+20261022234607_init|true
+```
+
+### `prisma migrate deploy` against Neon
+
+Command:
+
+```bash
+DATABASE_URL="$INVOICE_URL" \
+PGOPTIONS='-c lock_timeout=3s -c statement_timeout=30s' npx prisma migrate deploy
+```
+
+Exit code: 0. Output:
+
+```text
+Environment variables loaded from .env
+Prisma schema loaded from prisma\schema.prisma
+Datasource "db": PostgreSQL database "invoice", schema "public" at "ep-autumn-glitter-b9vtz0q5.c-7.eu-central-1.aws.neon.tech"
+
+1 migration found in prisma/migrations
+
+Applying migration `20261022234607_init`
+
+The following migration(s) have been applied:
+
+migrations/
+  └─ 20261022234607_init/
+    └─ migration.sql
+
+All migrations have been successfully applied.
+```
+
+This is where schema changes happen for the hosted service: the runtime image
+omits the Prisma CLI, and the Render free plan has no pre-deploy command. See
+`docs/PIPELINE.md`, “Hosted deploy lane”.
+
+### Public endpoints
+
+Command:
+
+```bash
+curl -sS -w '\nHTTP %{http_code}\n' https://invoice-api-26b4.onrender.com/health
+curl -sS -w '\nHTTP %{http_code}\n' https://invoice-api-26b4.onrender.com/ready
+```
+
+Exit code: 0. Output:
+
+```text
+{"status":"ok"}
+HTTP 200
+{"status":"ok","checks":{"database":"ok","migrations":"ok"}}
+HTTP 200
+```
+
+### `bash scripts/smoke.sh https://invoice-api-26b4.onrender.com`
+
+Command:
+
+```bash
+SMOKE_TOKEN="$HOSTED_SMOKE_TOKEN" \
+  bash scripts/smoke.sh https://invoice-api-26b4.onrender.com
+```
+
+Exit code: 0. The token was read from the Render service environment and was
+not printed. Output:
+
+```text
+smoke: https://invoice-api-26b4.onrender.com (release remote)
+PASS 1/5 /health 200 {status:ok}
+PASS 2/5 /ready 200 database+ok migrations+ok
+PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+PASS 5/5 /ready p95 382.8ms < 1000ms (5 warm samples)
+smoke: ok (5 of 5 assertions)
+```
+
+The 1000 ms budget applies only to a public URL; the local lane keeps 300 ms.
+The measured p95 is a fresh TLS connection per sample across the internet, not
+the local 300 ms budget being silently dropped — the printed line names the
+budget used.
+
+### Render deploy
+
+Service `invoice-api` (`srv-dbhni75g1s2s73ahheig`), Docker, free, `frankfurt`,
+health check `/health`, `autoDeploy: no`. Public URL:
+<https://invoice-api-26b4.onrender.com>.
+
+Latest deploy observed:
+
+| Field | Value |
+|---|---|
+| deploy id | `dep-dbhnjfg8v5cc738v0mq0` |
+| status | `live` |
+| commit | `f6c4355f2a6e7e01a884b2a599002f9b570b42a1` |
+| started | `2026-10-29T16:52:14Z` |
+| finished | `2026-10-29T16:52:51Z` |
+
+The trigger was `POST /v1/services/srv-dbhni75g1s2s73ahheig/deploys` with
+`{"commitId":"f6c4355…"}` — the same call the `deploy` job makes. Render's API
+has no deploy-hook creation endpoint, so the job uses `RENDER_API_KEY`; see
+`docs/PIPELINE.md` for the permission trade-off.
 
 ## `bash scripts/verify.sh`
 
@@ -824,17 +959,23 @@ Node.js) and **0 CRITICAL, 0 HIGH findings**. The built image is
 
 ### The green run
 
-Not yet observed: the supervisor merges the branch and dispatches `pr.yml` on
-`master`. Values stay as placeholders rather than invented numbers.
+Observed on `master` in run 40905865091; `ci-ok` and `publish` succeeded, so the
+pushed digest is real rather than a placeholder.
 
 - Run URL: `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`
 - Pushed digest: `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`
 
 ## What is not here
 
-- No green Actions output yet. Run 40902199280 exists and is quoted in
-  `docs/EVIDENCE.md`; it failed in `trivy`. The green run is `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`.
-- No `cosign verify` or `gh attestation verify` output: no registry artifact
-  exists yet. The pushed digest is `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`.
+- No transcript of the `deploy` job inside Actions yet: it exists in `pr.yml`
+  and parses, but it runs only after this branch is merged and a master run
+  starts. The first such run with a green `deploy` job is the supervisor's
+  confirmation. `TODO_SUPERVISOR`.
+- No `gh attestation verify` output: the `publish` job signs the pushed digest
+  with cosign keyless but does not produce an attestation artifact. The green
+  run is `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`;
+  the pushed digest is
+  `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`.
+- No red-PR transcript: none has been opened yet (W3-b2b).
 - No `npm run dev` transcript: the command starts a watcher and does not exit;
   the captured service output comes from the built release above.
