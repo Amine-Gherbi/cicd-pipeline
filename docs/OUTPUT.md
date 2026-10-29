@@ -968,6 +968,110 @@ pushed digest is real rather than a placeholder.
 - Run URL: `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`
 - Pushed digest: `sha256:e45898df9f0f2aab5982069f696ee26a465ea34ef0c3897bc7dae690049b31da`
 
+## Demo page — hosted
+
+The page is <https://pipeline-demo-57mh.onrender.com> (Render service
+`srv-dbhofsbbc2fs73f0rg0g`, docker, free, Frankfurt, health `/health`,
+`autoDeploy: no`, built from `Dockerfile.demo`). `/api/state` answers
+`{"readOnly":false,"reason":null}`.
+
+### The page holds no credential
+
+```bash
+curl -s https://pipeline-demo-57mh.onrender.com/ | grep -c 'github_pat_\|Bearer'
+```
+
+Exit code: 1 (`grep` exits 1 when it matches nothing). Output:
+
+```text
+0
+```
+
+### Guard rails
+
+The first dispatch of `demo.yml` returns 202. A second request while that run
+is in flight:
+
+```text
+HTTP 409
+{"error":"busy","runningId":"run_mvtutx2j_ea03f3c7","message":"another action is running"}
+```
+
+A second dispatch from the same address inside 60 s:
+
+```text
+HTTP 429
+{"error":"rate_limited","retryAfter":59,"message":"one dispatch per address per 60s"}
+```
+
+### Rollback exercise
+
+`POST /api/run {"action":"rollback","confirm":true}` → run
+`run_mvtuydbd_914645e8`, status `success`. The server deployed the recorded
+faulty commit through the Render API, waited for `live` and `/health`, ran the
+five smoke assertions, then redeployed the previously live deploy and repeated
+health and smoke. Timestamps are UTC.
+
+```text
+deploy.start          dep-dbhonnk9v7es73bg70f0  ffa0422df22d  18:09:34.303Z
+health.ok                                              18:10:16.817Z
+smoke.fail
+  PASS 1/5 /health 200 {status:ok}
+  PASS 2/5 /ready 200 database+ok migrations+ok
+  FAIL 3/5 POST /invoices authenticated — authenticated request returned 500, expected 201
+  PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+  PASS 5/5 /ready p95 63.1ms < 1000ms (5 warm samples)
+  smoke: FAIL (1 of 5 assertions)
+rollback.start        dep-dbhoo3rbc2fs73f1b85g  2690aa5fe104  18:10:22.809Z
+rollback.health.ok                                        18:10:40.576Z
+rollback.smoke.ok
+  PASS 1/5 /health 200 {status:ok}
+  PASS 2/5 /ready 200 database+ok migrations+ok
+  PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
+  PASS 4/5 GET /invoices/<random-uuid> 404 not_found, no stack
+  PASS 5/5 /ready p95 48.4ms < 1000ms (5 warm samples)
+  smoke: ok (5 of 5 assertions)
+```
+
+`rollback.start` targets `dep-dbhomhmgekts73br5ps0` (the deploy that was live
+before the exercise, commit `2690aa5fe104`). Render reports the faulty deploy as
+`deactivated` and the rollback deploy as `live`; a direct run of
+`bash scripts/smoke.sh https://invoice-api-26b4.onrender.com` afterwards passes
+5/5.
+
+### Bad-image finding
+
+The bad-image lane builds from
+`node:18.12.0-alpine@sha256:1f09c210a17508d34277971b19541a47a26dc5a641dedc03bd28cff095052996`
+and scans with `--exit-code 1 --severity CRITICAL,HIGH --ignore-unfixed`.
+Rescanning that digest exits 1 with, across the two targets, 10 HIGH in the
+Alpine packages and 36 findings (35 HIGH, 1 CRITICAL) in the Node dependencies.
+First finding line:
+
+```text
+libcrypto1.1  CVE-2022-4450  HIGH  fixed  1.1.1q-r0  1.1.1t-r0  openssl: double free after calling PEM_read_bio_ex
+```
+
+### Run URLs
+
+`demo.yml` is dispatched with `ref: master`. GitHub only accepts
+`workflow_dispatch` for a workflow that exists on the default branch; before the
+merge of `w3-c-demo-page` the endpoint answers:
+
+```text
+HTTP 404
+{"message":"Not Found","documentation_url":"https://docs.github.com/rest/actions/workflows#create-a-workflow-dispatch-event","status":"404"}
+```
+
+The page reports that verbatim ("GitHub returned 404 for demo.yml on master…")
+instead of spinning. The two hosted run URLs are produced by the first clicks
+after the merge:
+
+- **Gates (green):** click *Run the gates*; the evidence line shows
+  `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/<id>`.
+- **Bad image (red):** click *Ship a bad image*; the evidence line shows the red
+  `bad-image-trivy` run URL and the CVE lines.
+
 ## What is not here
 
 - The `deploy` job has run: run [40920824698](https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40920824698) on `master` is green from `lint` to

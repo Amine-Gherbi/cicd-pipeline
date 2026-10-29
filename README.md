@@ -2,6 +2,10 @@
 
 **Case study:** https://gherbi.pages.dev/projects/cicd-pipeline/ — the release lane runs locally; the GitHub Actions lane has not run (see *Status*).
 
+**Demo page:** <https://pipeline-demo-57mh.onrender.com> — one screen, three
+real actions: dispatch the gates, ship a bad image that Trivy must reject, and
+roll a faulty deploy back with the same five smoke assertions.
+
 `invoice-api` is a Fastify + Prisma + PostgreSQL service, and this repository is
 the delivery pipeline that gates it. The PR workflow defines eight gate jobs and
 one aggregator status, `ci-ok`. The local lane builds a release, swaps
@@ -125,6 +129,9 @@ check, the hosted deploy lane, and what the repository does and does not ship.
 
 ```
 .github/workflows/pr.yml   8 gates → ci-ok; publish → deploy on master
+.github/workflows/demo.yml workflow_dispatch: gates | bad-image, for the demo page
+demo/                      plain-ESM Fastify page (no build step): dispatch, run jobs, rollback
+Dockerfile.demo            image for the demo page (Render service pipeline-demo)
 src/                       Fastify + Prisma invoice-api
 tests/integration/         9 integration tests (real PostgreSQL)
 Dockerfile                 multi-stage, non-root runtime; alpine, 284 MB (measured 2026-10-23)
