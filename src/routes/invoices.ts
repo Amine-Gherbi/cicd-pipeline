@@ -67,6 +67,10 @@ export function registerInvoiceRoutes(
   const postOptions = smokeToken === undefined ? {} : { preHandler: smokeTokenGuard(smokeToken) };
 
   app.post('/invoices', postOptions, async (request, reply) => {
+    // demo-fault: this commit is only ever deployed by the hosted rollback
+    // exercise, which expects the authenticated smoke assertion to fail.
+    throw new AppError(500, 'demo_fault', 'Deliberate demo fault: this release cannot create invoices');
+
     const parsed = createInvoiceSchema.safeParse(request.body);
     if (!parsed.success) {
       throw validationFailed(
