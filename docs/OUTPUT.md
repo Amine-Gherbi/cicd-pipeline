@@ -970,10 +970,9 @@ pushed digest is real rather than a placeholder.
 
 ## What is not here
 
-- No transcript of the `deploy` job inside Actions yet: it exists in `pr.yml`
-  and parses, but it runs only after this branch is merged and a master run
-  starts. The first such run with a green `deploy` job is the supervisor's
-  confirmation. `TODO_SUPERVISOR`.
+- The `deploy` job has run: run [40920824698](https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40920824698) on `master` is green from `lint` to
+  `deploy`, which triggered Render deploy `dep-dbho33ajnfac73agiofg`, waited for `live` and passed all five smoke assertions
+  against <https://invoice-api-26b4.onrender.com> (`p95 142.6 ms` on the readiness probe).
 - No `gh attestation verify` output: the `publish` job signs the pushed digest
   with cosign keyless but does not produce an attestation artifact. The green
   run is `https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40905865091`;
