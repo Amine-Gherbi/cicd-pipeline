@@ -27,7 +27,10 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+# DEMO ONLY — this draft PR deliberately pins the shipped runtime to the
+# outdated node:18.12.0-alpine base used by the demo's bad-image lane. That
+# base (alpine 3.16.2) carries 10 fixable HIGH CVEs, so the trivy gate fails.
+FROM node:18.12.0-alpine@sha256:1f09c210a17508d34277971b19541a47a26dc5a641dedc03bd28cff095052996 AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8080
