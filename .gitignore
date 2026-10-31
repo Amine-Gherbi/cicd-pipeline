@@ -11,3 +11,5 @@ coverage/
 .deploy/
 current
 current.txt
+_orchestration/
+.superpowers/
