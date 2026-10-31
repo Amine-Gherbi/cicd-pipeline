@@ -14,6 +14,7 @@ import {
   recentRuns,
   releases,
 } from './runs.mjs';
+import { securityHeaders } from './security-headers.mjs';
 
 const app = Fastify({
   logger: { level: process.env.LOG_LEVEL || 'warn' },
@@ -21,16 +22,8 @@ const app = Fastify({
   bodyLimit: 8_192,
 });
 
-app.addHook('onSend', async (_request, reply, payload) => {
-  reply.header('x-content-type-options', 'nosniff');
-  reply.header('x-frame-options', 'DENY');
-  reply.header('referrer-policy', 'no-referrer');
-  reply.header(
-    'content-security-policy',
-    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-  );
-  return payload;
-});
+// Registered before the routes so the skip-override hook covers every reply.
+app.register(securityHeaders);
 
 function clientIp(request) {
   const forwarded = request.headers['x-forwarded-for'];

@@ -7,7 +7,7 @@
 #   1. GET  /health                     -> 200 {status:"ok"}
 #   2. GET  /ready                      -> 200, DB reachable + no pending migration
 #   3. POST /invoices (bearer token)    -> 401 without the seeded token, 201 with it
-#   4. GET  /invoices/<random-uuid>     -> 404 {error:{code:"not_found"}}, no stack
+#   4. GET  /invoices/<random-uuid>     -> 401 without the token, 404 not_found with it, no stack
 #   5. GET  /ready latency              -> p95 < 300 ms, 5 warm samples after one warm-up
 #
 # Usage: scripts/smoke.sh [base-url]
@@ -147,16 +147,24 @@ process.exit(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.t
   fi
 fi
 
-# 4. random uuid -> 404 not_found with no stack trace
+# 4. read path is authenticated: 401 without the token, 404 with it, no stack
 uuid=$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')
-code=$(http_code "$BASE/invoices/$uuid")
-if [ "$code" = "404" ] &&
-  curl -sS -o "$BODY" "$BASE/invoices/$uuid" 2>/dev/null &&
-  json_equals "$BODY" error.code not_found &&
-  ! grep -qiE 'stack|\.ts:' "$BODY"; then
-  pass "4/5 GET /invoices/<random-uuid> 404 not_found, no stack"
+anon=$(http_code "$BASE/invoices/$uuid")
+if [ -z "${SMOKE_TOKEN:-}" ]; then
+  fail "4/5 GET /invoices authenticated" "SMOKE_TOKEN is unset (start via service.sh to seed it)"
 else
-  fail "4/5 GET /invoices/<random-uuid> 404 not_found, no stack" "status=$code body=$(body_summary "$BODY")"
+  auth=$(http_code "$BASE/invoices/$uuid" -H "authorization: Bearer $SMOKE_TOKEN")
+  if [ "$anon" != "401" ]; then
+    fail "4/5 GET /invoices authenticated" "unauthenticated read returned $anon, expected 401"
+  elif [ "$auth" != "404" ]; then
+    fail "4/5 GET /invoices authenticated" "authenticated read returned $auth, expected 404"
+  elif ! curl -sS -o "$BODY" -H "authorization: Bearer $SMOKE_TOKEN" "$BASE/invoices/$uuid" 2>/dev/null; then
+    fail "4/5 GET /invoices authenticated" "could not read the 404 response"
+  elif ! json_equals "$BODY" error.code not_found || grep -qiE 'stack|\.ts:' "$BODY"; then
+    fail "4/5 GET /invoices authenticated" "404 body was not not_found without a stack: $(body_summary "$BODY")"
+  else
+    pass "4/5 GET /invoices/<random-uuid> 401 unauthenticated, 404 authenticated, no stack"
+  fi
 fi
 
 # 5. p95 < 300 ms over 5 warm samples after one warm-up.

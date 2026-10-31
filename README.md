@@ -34,8 +34,14 @@ Evidence: [docs/OUTPUT.md](docs/OUTPUT.md) has each command, its exit code and
 the output captured on this machine. `docs/EVIDENCE.md` separates
 `verified locally` from `unverified`.
 
-**Local only.** There is no git remote, so no GitHub Actions run exists. The CI
-lane is written and structurally checked, not executed.
+**Executed on GitHub, not only written.** The workflow is registered in
+`Amine-Gherbi/cicd-pipeline`; the `main-protection` ruleset requires the literal
+`ci-ok` check, and run 40929181528 is green end to end on `master` — eight
+gates, `ci-ok`, `publish` (GHCR + cosign) and `deploy` (Render + public smoke).
+The red PR is real too: run 40931333527 fails `trivy` and `ci-ok` and stays
+blocked. The demo page at <https://pipeline-demo-57mh.onrender.com> dispatches
+the `demo` workflow from the browser; the local lane remains the rollback
+proof.
 
 ## Commands
 

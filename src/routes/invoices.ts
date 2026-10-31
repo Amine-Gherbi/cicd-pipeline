@@ -64,9 +64,11 @@ export function registerInvoiceRoutes(
   prisma: PrismaClient,
   smokeToken?: string,
 ): void {
-  const postOptions = smokeToken === undefined ? {} : { preHandler: smokeTokenGuard(smokeToken) };
+  // The token guards both the write and the read path: once configured, an
+  // invoice is not readable by anyone who merely knows its UUID.
+  const guardOptions = smokeToken === undefined ? {} : { preHandler: smokeTokenGuard(smokeToken) };
 
-  app.post('/invoices', postOptions, async (request, reply) => {
+  app.post('/invoices', guardOptions, async (request, reply) => {
     const parsed = createInvoiceSchema.safeParse(request.body);
     if (!parsed.success) {
       throw validationFailed(
@@ -90,7 +92,7 @@ export function registerInvoiceRoutes(
     return reply.status(201).send(toResponse(invoice));
   });
 
-  app.get<{ Params: { id: string } }>('/invoices/:id', async (request) => {
+  app.get<{ Params: { id: string } }>('/invoices/:id', guardOptions, async (request) => {
     const id = request.params.id;
     if (id.length > 64 || !uuidPattern.test(id)) {
       throw new AppError(400, 'validation_error', 'Invoice id must be a UUID');

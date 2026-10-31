@@ -1,0 +1,86 @@
+{
+  "dim": [
+    {
+      "element": "span.num",
+      "text": "01",
+      "color": "rgb(139, 145, 153)",
+      "background": "rgb(17, 19, 22)",
+      "fontSize": "11px",
+      "ratio": 5.855
+    },
+    {
+      "element": "span.ev.bad",
+      "text": "· GH_DISPATCH_TOKEN is not set",
+      "color": "rgb(139, 145, 153)",
+      "background": "rgb(17, 19, 22)",
+      "fontSize": "11.5px",
+      "ratio": 5.855
+    },
+    {
+      "element": "span.num",
+      "text": "02",
+      "color": "rgb(139, 145, 153)",
+      "background": "rgb(17, 19, 22)",
+      "fontSize": "11px",
+      "ratio": 5.855
+    },
+    {
+      "element": "span.num",
+      "text": "03",
+      "color": "rgb(139, 145, 153)",
+      "background": "rgb(17, 19, 22)",
+      "fontSize": "11px",
+      "ratio": 5.855
+    },
+    {
+      "element": "div.releases",
+      "text": "RENDER_API_KEY is not set",
+      "color": "rgb(139, 145, 153)",
+      "background": "rgb(10, 11, 13)",
+      "fontSize": "11.5px",
+      "ratio": 6.195
+    },
+    {
+      "element": "div.empty",
+      "text": "No action running. Choose one on the left.",
+      "color": "rgb(139, 145, 153)",
+      "background": "rgb(17, 19, 22)",
+      "fontSize": "12.5px",
+      "ratio": 5.855
+    },
+    {
+      "element": "p",
+      "text": "invoice-api builds from the repository. Render exposes a dep",
+      "color": "rgb(139, 145, 153)",
+      "background": "rgb(17, 19, 22)",
+      "fontSize": "11.5px",
+      "ratio": 5.855
+    },
+    {
+      "element": "p",
+      "text": "The browser never holds a credential. Every provider call is",
+      "color": "rgb(139, 145, 153)",
+      "background": "rgb(17, 19, 22)",
+      "fontSize": "11.5px",
+      "ratio": 5.855
+    },
+    {
+      "element": "span.mono",
+      "text": "ready",
+      "color": "rgb(139, 145, 153)",
+      "background": "rgb(10, 11, 13)",
+      "fontSize": "11.5px",
+      "ratio": 6.195
+    },
+    {
+      "element": "span",
+      "text": "run id · deploy id · smoke transcript",
+      "color": "rgb(139, 145, 153)",
+      "background": "rgb(10, 11, 13)",
+      "fontSize": "11.5px",
+      "ratio": 6.195
+    }
+  ],
+  "below": [],
+  "dimCount": 10
+}

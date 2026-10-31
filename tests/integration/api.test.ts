@@ -61,6 +61,14 @@ describe('invoice-api integration', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: 'ok' });
     expect(response.headers['x-request-id']).toBeTruthy();
+    expect(response.headers['strict-transport-security']).toBe(
+      'max-age=31536000; includeSubDomains',
+    );
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['x-frame-options']).toBe('DENY');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+    expect(response.headers['permissions-policy']).toBe('camera=(), microphone=(), geolocation=()');
+    expect(response.headers['content-security-policy']).toContain("default-src 'none'");
   });
 
   it('GET /ready returns 200 when the database answers and no migration is pending', async () => {
@@ -101,7 +109,7 @@ describe('invoice-api integration', () => {
     expect(Number.isInteger(stored.amountCents)).toBe(true);
   });
 
-  it('POST /invoices requires the bearer token when SMOKE_TOKEN is configured', async () => {
+  it('the bearer token guards both POST and GET when SMOKE_TOKEN is configured', async () => {
     const body = { customerId: 'cus_auth', amountCents: 100 };
 
     const anonymous = await authedApp.inject({ method: 'POST', url: '/invoices', payload: body });
@@ -117,7 +125,20 @@ describe('invoice-api integration', () => {
       headers: { authorization: `Bearer ${smokeToken}` },
     });
     expect(authorized.statusCode).toBe(201);
-    expect(authorized.json<{ id: string }>().id).toMatch(uuidPattern);
+    const invoiceId = authorized.json<{ id: string }>().id;
+    expect(invoiceId).toMatch(uuidPattern);
+
+    const anonymousRead = await authedApp.inject({ method: 'GET', url: `/invoices/${invoiceId}` });
+    expect(anonymousRead.statusCode).toBe(401);
+    expect(anonymousRead.body).not.toContain('cus_auth');
+
+    const authorizedRead = await authedApp.inject({
+      method: 'GET',
+      url: `/invoices/${invoiceId}`,
+      headers: { authorization: `Bearer ${smokeToken}` },
+    });
+    expect(authorizedRead.statusCode).toBe(200);
+    expect(authorizedRead.json<{ customerId: string }>().customerId).toBe('cus_auth');
   });
 
   it('POST /invoices rejects a non-integer amount with a structured error', async () => {
@@ -144,7 +165,11 @@ describe('invoice-api integration', () => {
     });
     const createdBody = created.json<{ id: string }>();
 
-    const response = await app.inject({ method: 'GET', url: `/invoices/${createdBody.id}` });
+    const response = await authedApp.inject({
+      method: 'GET',
+      url: `/invoices/${createdBody.id}`,
+      headers: { authorization: `Bearer ${smokeToken}` },
+    });
     const body = response.json<{
       id: string;
       customerId: string;
@@ -161,19 +186,37 @@ describe('invoice-api integration', () => {
     expect(new Date(body.createdAt).toISOString()).toBe(body.createdAt);
   });
 
-  it('GET /invoices/:uuid returns 404 not_found without a stack trace for an unknown id', async () => {
-    const response = await app.inject({ method: 'GET', url: `/invoices/${randomUUID()}` });
+  it('GET /invoices/:uuid answers 401 without the token and 404 not_found with it', async () => {
+    const id = randomUUID();
 
-    expect(response.statusCode).toBe(404);
-    expect(response.json()).toEqual({
+    const anonymous = await authedApp.inject({ method: 'GET', url: `/invoices/${id}` });
+    expect(anonymous.statusCode).toBe(401);
+    expect(anonymous.json()).toEqual({
+      error: { code: 'unauthorized', message: 'A valid bearer token is required' },
+    });
+
+    const authorized = await authedApp.inject({
+      method: 'GET',
+      url: `/invoices/${id}`,
+      headers: { authorization: `Bearer ${smokeToken}` },
+    });
+    expect(authorized.statusCode).toBe(404);
+    expect(authorized.json()).toEqual({
       error: { code: 'not_found', message: 'Invoice not found' },
     });
-    expect(response.body.toLowerCase()).not.toContain('stack');
-    expect(response.body.toLowerCase()).not.toContain('.ts:');
+    expect(authorized.body.toLowerCase()).not.toContain('stack');
+    expect(authorized.body.toLowerCase()).not.toContain('.ts:');
   });
 
   it('GET /invoices/:id rejects a malformed uuid with 400 validation_error', async () => {
-    const response = await app.inject({ method: 'GET', url: '/invoices/not-a-uuid' });
+    const anonymous = await authedApp.inject({ method: 'GET', url: '/invoices/not-a-uuid' });
+    expect(anonymous.statusCode).toBe(401);
+
+    const response = await authedApp.inject({
+      method: 'GET',
+      url: '/invoices/not-a-uuid',
+      headers: { authorization: `Bearer ${smokeToken}` },
+    });
 
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({
