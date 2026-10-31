@@ -41,17 +41,22 @@ Authenticated unknown id body:
 ```
 
 `scripts/smoke.sh` assertion 4 now proves both statuses and the error shape.
-Full run (`RELEASE_PORT=18093 bash scripts/smoke.sh`, exit 0):
+Full run in the form the deploy job uses (`SMOKE_TOKEN` from the environment, an
+explicit base URL, exit 0):
 
 ```text
-smoke: http://127.0.0.1:18093 (release .releases/7580daaa33867aa781a9eae009b4f965adc7ef7c)
+$ SMOKE_TOKEN=… bash scripts/smoke.sh http://127.0.0.1:18093
+smoke: http://127.0.0.1:18093 (release remote)
 PASS 1/5 /health 200 {status:ok}
 PASS 2/5 /ready 200 database+ok migrations+ok
 PASS 3/5 POST /invoices 401 unauthenticated, 201 authenticated
 PASS 4/5 GET /invoices/<random-uuid> 401 unauthenticated, 404 authenticated, no stack
-PASS 5/5 /ready p95 14.0ms < 300ms (5 warm samples)
+PASS 5/5 /ready p95 14.4ms < 1000ms (5 warm samples)
 smoke: ok (5 of 5 assertions)
 ```
+
+The no-argument local form (`RELEASE_PORT=18093 bash scripts/smoke.sh`) also
+passes 5/5; its transcript is `_orchestration/runs/QA-7/smoke-local.txt`.
 
 The integration test suite stays at 9 tests: the existing GET tests now run on
 the token-configured app with the header, and the token test covers the read
