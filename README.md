@@ -38,7 +38,7 @@ the output captured on this machine. `docs/EVIDENCE.md` separates
 `Amine-Gherbi/cicd-pipeline`; the `main-protection` ruleset requires the literal
 `ci-ok` check, and run 40929181528 is green end to end on `master` — eight
 gates, `ci-ok`, `publish` (GHCR + cosign) and `deploy` (Render + public smoke).
-The red PR is real too: run 40931333527 fails `trivy` and `ci-ok` and stays
+The red PR is real too: run 41167190749 fails `trivy` and `ci-ok` and stays
 blocked. The demo page at <https://pipeline-demo-57mh.onrender.com> dispatches
 the `demo` workflow from the browser; the local lane remains the rollback
 proof.
@@ -166,10 +166,10 @@ captured assets show the local lane, while the hosted runs are linked under
 ## Limits, stated plainly
 
 - **The red PR is open, red, and blocked.** PR
-  <https://github.com/Amine-Gherbi/cicd-pipeline/pull/2> is a draft that pins
+  <https://github.com/Amine-Gherbi/cicd-pipeline/pull/6> is a draft that pins
   the runtime base to `node:18.12.0-alpine` (alpine 3.16.2, 10 fixable HIGH).
   `trivy` and `ci-ok` fail in
-  <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40931333527>, and
+  <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/41167190749>, and
   `mergeable_state` is `blocked`. It is evidence, not a change to merge.
 - **The hosted `deploy` job is green in Actions.** Run
   <https://github.com/Amine-Gherbi/cicd-pipeline/actions/runs/40929181528>
